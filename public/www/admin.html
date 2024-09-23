@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <!-- <link href="/static/css/style.css" rel="stylesheet"> -->
+        <script src="https://cdn.tailwindcss.com"></script>
+
+        <script src="/static/www/css/anime.min.js"></script>
+        <link rel="stylesheet" href="/static/www/css/highlight/styles/vs2015.min.css">
+        <script src="/static/www/css/highlight/highlight.min.js"></script>
+        <title>OA后端控制台</title>
+        <script>
+            let chosendb
+            let apiNow
+            let apiMethodNow = "POST"
+            let logined = false
+            const passwd = document.cookie.split('; ').find(row => row.startsWith('encrypt='))
+            const password = (passwd) ? passwd.split('=')[1] : null
+            logined = (passwd) ? true : false
+        </script>
+        <style>
+            .lyellow-line {
+                transform: scaleX(0);
+                transform-origin: right;
+            }
+
+            .linput-box {
+                position: relative;
+                transition: border-color 400ms ease;
+                /* 为边框颜色变化添加平滑过渡效果 */
+            }
+
+            body::-webkit-scrollbar {
+                display: none;
+            }
+
+            code::-webkit-scrollbar {
+                display: none;
+            }
+        </style>
+
+    </head>
+
+
+    <body id="body" class="bg-gray-500 overflow-auto">
+        <div id="loading-bar-container" class="fixed top-0 left-0 w-full h-1 z-50">
+            <!-- 加载条 -->
+            <div id="pageloadingbar" class="h-full" style="width: 0%;"></div>
+        </div>
+        <script>
+            const pageloadingbar = document.getElementById("pageloadingbar")
+            let pageLoadingAnimeTimeLine
+            const playPageLoadingAnimeStart = () => {
+                pageLoadingAnimeTimeLine = anime.timeline({
+                    autoplay: false,
+                    easing: "easeInOutQuint",
+                }).add({
+                    targets: pageloadingbar,
+                    width: ["0%", "45%"],
+                    opacity: 1,
+                    backgroundColor: ["#CDD6D0", "#6BFF78"],
+                    duration: 250
+                })
+                pageLoadingAnimeTimeLine.play()
+            }
+            const playPageLoadingAnimeWithLastGreen = async () => {
+                await pageLoadingAnimeTimeLine.finished
+                pageLoadingAnimeTimeLine.add({
+                    targets: pageloadingbar,
+                    width: ["45%", "100%"],
+                    backgroundColor: "#6BFF78",
+                    opacity: { value: [1, 0], duration: 300, delay: 200 },
+                    duration: 400
+                })
+                pageLoadingAnimeTimeLine.seek(250)
+                pageLoadingAnimeTimeLine.play()
+            }
+            const playPageLoadingAnimeWithLastRed = async () => {
+                await pageLoadingAnimeTimeLine.finished
+                pageLoadingAnimeTimeLine.add({
+                    targets: pageloadingbar,
+                    width: { value: "100%", duration: 300 },
+                    backgroundColor: { value: ["#6BFF78", "#FF4E4E"], duration: 200 },
+                    opacity: { value: [1, 0], duration: 800 },
+                })
+                pageLoadingAnimeTimeLine.seek(250)
+                pageLoadingAnimeTimeLine.play()
+            }
+        </script>
+        <div id="infopopup"
+            class="fixed top-12 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white opacity-0 p-4 w-auto rounded-lg shadow-lg justify-center items-center content-center">
+            <p id="infomessage" class="flex text-sm text-gray-700 justify-center items-center content-center"></p>
+        </div>
+        <script>
+            const infopopup = document.getElementById("infopopup")
+            const infomessage = document.getElementById("infomessage")
+            function showInfoHint(message, level) {
+                let gradient
+                switch (level) {
+                    case "err":
+                        gradient = ["#FF5151", "#FF9090"]
+                        break
+                    case "ok":
+                        gradient = ["#2EFF5E", "#8FFF89"]
+                        break
+                    default:
+                        break
+                }
+                infomessage.textContent = message // 设置错误信息
+                const width = ((message.length < 50) ? message.length * 1.5 : 50) + "%"
+                anime({
+                    targets: infopopup,
+                    opacity: { value: [0, 1], duration: 200 },
+                    top: { value: ["0%", "10%"], duration: 200 },
+                    width: ["0%", width],
+                    backgroundColor: { value: gradient, duration: 3000 },
+                    duration: 500,
+                    easing: 'easeInOutQuad',
+                    update: (a) => {
+                        const pos = Math.round((a.progress / 20) * message.length)
+                        infomessage.textContent = message.slice(0, pos)
+                    }
+                })
+
+                setTimeout(() => {
+                    anime({
+                        targets: infopopup,
+                        opacity: [1, 0],
+                        top: ["10%", "15%"],
+                        duration: 500,
+                        easing: 'easeInOutQuad',
+                    })
+                }, 3000)
+
+            }
+            function closeErrorPopup() {
+                const errorPopup = document.getElementById('errorPopup')
+
+                // 使用 Anime.js 创建隐藏动画
+                anime({
+                    targets: '#errorPopup',
+                    opacity: [1, 0], // 从完全不透明到完全透明
+                    duration: 500,
+                    easing: 'easeInOutQuad',
+                    complete: function () {
+                        errorPopup.classList.add('hidden')
+                        errorPopup.style.display = 'none' // 完成动画后隐藏弹窗
+                    }
+                })
+            }
+
+        </script>
+
+        <svg id="backToTopBtn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48"
+            class="cursor-pointer fixed bottom-5 right-5 z-50" style="fill: #4F46E5;">
+            <path d="M5 15l7-7 7 7H5z" />
+        </svg>
+
+
+
+        <div id="incover" class="z-10 absolute top-0 left-0 h-full w-full "></div>
+        <script>
+            const incover = document.getElementById("incover")
+            anime({
+                targets: incover,
+                opacity: [1, 0],
+                backgroundColor: ["#FFFFFF", "#FFCFB8"],
+                duration: 500,
+                easing: "easeInQuint",
+                complete: () => {
+                    incover.style.zIndex = -1
+                }
+            })
+        </script>
+        <div class="input-container relative mt-5 mx-6" style="width: 200px;">
+            <label for="interactive-input" class="block text-white text-3xl font-bold mb-1">
+                <span id="lpop" class="hint-text">登录</span>
+                <div id="lyellowline" class="lyellow-line bg-yellow-500 h-1 w-1/2"></div>
+                <div class="relative">
+                    <input type="password" id="lpassword"
+                        class="linput-box border-2 border-gray-300 bg-white text-black hover:border-indigo-500 mt-2 h-10 pl-5 pr-10 rounded-2xl text-lg focus:outline-none w-full">
+                    <button id="lsub"
+                        class="lenter-button absolute inset-y-0 right-0 mt-3 mr-2 flex items-center justify-center h-8 w-8 bg-slate-300 rounded-full focus:border-indigo-300 focus:border-2 focus:outline-none text-white shadow-md">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                        </svg>
+                    </button>
+                </div>
+            </label>
+        </div>
+        <p id="lpasswd">密码</p>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                const inputContainer = document.getElementById('input-container')
+                const inputBox = document.getElementById('lpassword')
+                const lyellowLine = document.getElementById('lyellowline')
+                const lsub = document.getElementById('lsub')
+                const original = inputBox.offsetWidth + "px"
+                const extend = "300px"
+                let lbchanged = false
+
+                inputBox.addEventListener('keypress', (event) => {
+                    if (event.keyCode === 13 || event.which === 13)
+                        lsub.click()
+                })
+                inputBox.addEventListener("mouseenter", () => {
+                    anime({
+                        targets: lsub,
+                        scale: [1, 1.05],
+                        easing: 'easeInOutQuad',
+                        duration: 400
+                    })
+                })
+                inputBox.addEventListener("mouseleave", () => {
+                    anime({
+                        targets: lsub,
+                        scale: [1.05, 1],
+                        easing: 'easeInOutQuad',
+                        duration: 400
+                    })
+                })
+
+                lsub.addEventListener("mouseenter", () => {
+                    if (inputBox.value.length == 0)
+                        anime({
+                            targets: lsub,
+                            backgroundColor: ["#CBD5E1", "#A8B0BA"],
+                            easing: 'easeInOutQuad',
+                            duration: 400
+                        })
+                })
+                lsub.addEventListener("mouseleave", () => {
+                    if (inputBox.value.length == 0)
+                        anime({
+                            targets: lsub,
+                            backgroundColor: ["#A8B0BA", "#CBD5E1"],
+                            easing: 'easeInOutQuad',
+                            duration: 400
+                        })
+                })
+
+                inputBox.addEventListener('focus', () => {
+                    inputBox.classList.replace("border-gray-300", "border-blue-400")
+                    anime({
+                        targets: lyellowLine,
+                        scaleX: [0, 1], // 从0（完全压缩）扩展到1（完全展开）
+                        opacity: [0, 1],
+                        easing: 'easeOutExpo',
+                        delay: 200,
+                        duration: 350,
+                    })
+                    anime({
+                        targets: inputBox,
+                        width: extend, // 目标宽度
+                        borderRadius: ["16px", "25px"],
+                        duration: 700, // 动画持续时间
+                        easing: 'easeOutExpo', // 缓动函数
+                    })
+                    anime({
+                        targets: lsub,
+                        right: "-100px", // 按钮向右移动的距离
+                        easing: 'easeOutExpo',
+                        duration: 700,
+                    })
+                })
+                inputBox.addEventListener('blur', () => {
+                    inputBox.classList.replace("border-blue-400", "border-gray-300")
+                    anime({
+                        targets: lyellowLine,
+                        scaleX: [1, 0], // 从1（完全展开）回缩到0（完全压缩）
+                        opacity: [1, 0],
+                        easing: 'easeOutExpo',
+                        delay: 200,
+                        duration: 350
+                    })
+                    anime({
+                        targets: inputBox,
+                        width: original, // 返回初始宽度
+                        borderRadius: ["25px", "16px"],
+                        duration: 700,
+                        easing: 'easeOutExpo',
+                    })
+                    anime({
+                        targets: lsub,
+                        right: "0px", // 按钮向右移动的距离
+                        easing: 'easeOutExpo',
+                        duration: 700,
+                    })
+                })
+                inputBox.addEventListener("input", () => {
+                    if (inputBox.value.length != 0 && !lbchanged) {
+                        anime({
+                            targets: lsub,
+                            backgroundColor: ["#E0E0E0", "#A291FF"],
+                            easing: 'easeOutExpo',
+                            duration: 700,
+                        })
+                        lbchanged = true
+                    }
+                    else if (inputBox.value.length == 0 && lbchanged) {
+                        anime({
+                            targets: lsub,
+                            backgroundColor: ["#A291FF", "#E0E0E0"],
+                            easing: 'easeOutExpo',
+                            duration: 700,
+                        })
+                        lbchanged = false
+                    }
+                })
+            })
+            async function verify() {
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "login", password: password, args: "verify" }) })
+                if (response.ok) {
+                    if (JSON.parse(await response.text()).data) {
+                        document.getElementById("lpop").innerText = "已登录"
+                        document.getElementById("lpasswd").remove()
+                        document.getElementById("lpassword").remove()
+                        document.getElementById("lsub").remove()
+                    }
+                }
+            }
+            verify()
+            document.getElementById("lsub").addEventListener("click", async () => {
+                const pswd = document.getElementById("lpassword").value
+                if (password == "undefined" || !password) {
+                    const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "login", password: pswd, args: "sign" }) })
+                    if (response.ok) {
+                        var data = JSON.parse(await response.text()).data
+                        if (data == "NOT PERMITTED!") {
+                            showInfoHint(data, "err")
+                            return
+                        }
+                        document.cookie = `encrypt=${data}`
+                        setTimeout(() => {
+                            window.location.replace("/admin")
+                        }, 500)
+                        anime({
+                            begin: () => {
+                                incover.style.zIndex = 10
+                            },
+                            targets: incover,
+                            opacity: [0, 1],
+                            backgroundColor: ["#FFCFB8", "#FFFFFF"],
+                            duration: 500,
+                            easing: "easeInOutQuint",
+                        })
+                    }
+                }
+            })
+
+        </script>
+
+        <!-- 全屏遮罩层 -->
+        <div class="fixed inset-0 -z-10 backdrop-blur-0" id="dpage-overlay"></div>
+
+        <button type="button" id="dbutton"
+            class="inline-flex items-center ml-4 mb-4 px-3 py-2 border-2 border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-indigo-100  outline-none focus:border-orange-200 focus:border-2">
+            <span id="dshowoptionbutton">选择数据表</span>
+            <svg id="dbuttonsvg" class="ml-2 -mr-0.5 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none"
+                viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+        </button>
+
+        <div id="doptions" class="fixed hidden top-1/4 w-1/6 h-1/2 flex items-center justify-center opacity-0 -z-10"
+            style="left: 40%;">
+            <div id="doptionbgs"
+                class="flex flex-col p-4 space-y-4 items-center justify-center bg-white shadow-md rounded-2xl w-full">
+                <div id="doptiontitle" class="text-lg pt-2 pb-2 font-bold text-center">数据库</div>
+                <div id="doptioncontainer" class="space-y-1 w-3/4">
+                    <!-- Option ->
+                    <div class="flex-grow border-t border-gray-300"></div>
+                    <button class="flex items-center w-full h-14 bg-neutral-100" id="dbbutton">
+                        <div class="flex justify-center w-full">
+                            <span class="px-4 text-sm text-gray-600 items-center">OPTION1</span>
+                        </div>
+                    </button>
+                    <!-- Option end -->
+                </div>
+            </div>
+        </div>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', async () => {
+                const doverlay = document.getElementById("dpage-overlay")
+                const doptions = document.getElementById("doptions")
+                const dbuttonsvg = document.getElementById('dbuttonsvg')
+                const dbutton = document.getElementById('dbutton')
+                const doptioncontainer = document.getElementById("doptioncontainer")
+                const doptiontitle = document.getElementById("doptiontitle")
+                const dshowoptionbutton = document.getElementById("dshowoptionbutton")
+
+                doptiontitle.innerText = "数据表"
+                if (!logined)
+                    doptiontitle.innerText = "未登录"
+
+                anime({
+                    targets: doptions, targets: doptions,
+                    opacity: [1, 0],
+                    duration: 0
+                })
+
+                const disappear = anime.timeline({
+                    duration: 500,
+                    autoplay: false,
+                    complete: () => {
+                        doptions.style.zIndex = -5
+                        doverlay.style.zIndex = -10
+                        doptions.classList.add('hidden')
+                    }
+                }).add({
+                    targets: doverlay,
+                    filter: ["blur(20px)", "blur(0px)"],
+                    easing: "easeOutQuint",
+                }).add({
+                    targets: doptions,
+                    translateY: ["0%", "15%"],
+                    opacity: [1, 0],
+                    easing: "easeOutQuint",
+                }, 0)
+
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "databases", password: password }) })
+                if (response.ok) {
+                    let lastButton
+                    const data = JSON.parse(await response.text())
+                    if (data.status == "O") {
+                        const datas = data.data
+                        for (let i in datas) {
+                            const optiondiv = document.createElement('div')
+                            doptioncontainer.appendChild(optiondiv)
+                            optiondiv.className = 'flex-grow border-t border-gray-300'
+                            const optionbutton = document.createElement('button')
+                            doptioncontainer.appendChild(optionbutton)
+                            optionbutton.className = 'flex items-center w-full h-14'
+                            optionbutton.id = `doption${i}`
+                            optionbutton.innerHTML = `<div class="flex justify-center w-full">
+                            <span id="doptionstext${i}" class="px-4 text-sm text-gray-600 items-center">${datas[i]}</span>
+                        </div>`
+
+                            optionbutton.addEventListener("mouseenter", () =>
+                                anime({
+                                    targets: optionbutton,
+                                    backgroundColor: ["#FFFFFF", "#F5F5F5"],
+                                    duration: 500,
+                                    easing: "easeInOutQuint",
+                                })
+                            )
+                            optionbutton.addEventListener("mouseleave", () =>
+                                anime({
+                                    targets: optionbutton,
+                                    backgroundColor: ["#F5F5F5", "#FFFFFF"],
+                                    duration: 500,
+                                    easing: "easeOutQuint",
+                                })
+                            )
+                            optionbutton.addEventListener("click", () => {
+                                if (!doptions.classList.contains('hidden'))
+                                    disappear.play()
+                                chosendb = document.getElementById(`doptionstext${i}`).innerHTML
+                                dshowoptionbutton.innerHTML = chosendb
+                            })
+                            lastButton = optionbutton
+                        }
+                        const optiondiv = document.createElement('div')
+                        doptioncontainer.appendChild(optiondiv)
+                        optiondiv.className = 'flex-grow border-t border-gray-300'
+                    }
+                }
+
+                dbutton.addEventListener("mouseenter", () => {
+                    anime.timeline({
+                        duration: 300,
+                        easing: "easeOutQuint",
+                    }).add({
+                        targets: dbuttonsvg,
+                        rotate: "90deg",
+                    }, 0).add({
+                        targets: dbutton,
+                        backgroundColor: ["#E0E7FF", "#C7CEE3"],
+                    }, 0)
+                })
+                dbutton.addEventListener("mouseleave", () => {
+                    anime.timeline({
+                        duration: 300,
+                        easing: "easeOutQuint",
+                    }).add({
+                        targets: dbuttonsvg,
+                        rotate: "0deg",
+                    }, 0).add({
+                        targets: dbutton,
+                        backgroundColor: ["#C7CEE3", "#E0E7FF"],
+                    }, 0)
+                })
+                dbutton.addEventListener("click", () => {
+                    const appear = anime.timeline({
+                        begin: () => {
+                            doverlay.style.zIndex = 49
+                            doptions.style.zIndex = 50
+                            doptions.classList.remove('hidden')
+                        },
+                        duration: 500,
+                        complete: () => {
+                        }
+                    })
+                    appear.add({
+                        targets: doverlay,
+                        filter: ["blur(0px)", "blur(20px)"],
+                        easing: "easeOutQuint",
+                    }, 0).add({
+                        targets: doptions,
+                        opacity: [0, 1],
+                        translateY: ["-15%", "0%"],
+                        easing: "easeOutQuint",
+                    }, 0)
+                })
+                doverlay.addEventListener("click", () => {
+                    if (!doptions.classList.contains('hidden'))
+                        disappear.play()
+                })
+            })
+        </script>
+
+        <div class="fixed right-72 top-5">
+            <button id="apidropdownbutton" class="h-12 w-12 rounded-full flex flex-col justify-around p-4 outline-none "
+                style="background-color: #A599B3;">
+                <span id="apidropdownbuttonline1" class="block w-full origin-right h-0.5 rounded-md bg-white"></span>
+                <span id="apidropdownbuttonline2" class="block w-full origin-right h-0.5 rounded-md bg-white"></span>
+                <span id="apidropdownbuttonline3" class="block w-full origin-right h-0.5 rounded-md bg-white"></span>
+            </button>
+            <div id="apidropdownmenu" class="absolute hidden w-auto mt-2 right-9 bg-white shadow-md rounded">
+                <div id="apidropdownmenuoptions" class="max-h-72 overflow-auto"
+                    style="overflow: auto; scrollbar-width: none;">
+                    <button id="apidropdownmenuoptionscustomer"
+                        class="flex items-center justify-between px-2 py-2 shadow border-b-2 text-gray-800 outline-none">
+                        <input id="apidropdownmenuoptionscustomertextarea" type="text" placeholder="customer api"
+                            class="w-auto outline-none border-slate-400 rounded-md border-2 shadow">
+                        <div id="apidropdownmenuoptionscustomermethods"
+                            class=" mx-2 w-10 bg-cyan-200 rounded-md content-center text-center p-0.5">
+                            <span id="apidropdownmenuoptionscustomermethodstext"
+                                class="text-sm font-bold text-slate-500"></span>
+                        </div>
+                    </button>
+                    <div class=" -mt-0.5 bottom-0 left-0 h-0.5 bg-yellow-500 w-full "></div>
+                </div>
+                <svg id="apidropdownarrow"
+                    class="animate-bounce h-6 mt-1 text-gray-500 w-full justify-center items-center"
+                    xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+            </div>
+        </div>
+        <script>
+            document.addEventListener("DOMContentLoaded", async () => {
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "apis", password: password }) })
+                const apidropdownmenuoptions = document.getElementById("apidropdownmenuoptions")
+                const apidropdownbutton = document.getElementById("apidropdownbutton")
+                const apidropdownmenu = document.getElementById('apidropdownmenu')
+                const apidropdownmenuoptionscustomermethods = document.getElementById("apidropdownmenuoptionscustomermethods")
+                const apidropdownmenuoptionscustomermethodstext = document.getElementById("apidropdownmenuoptionscustomermethodstext")
+                const apidropdownmenuoptionscustomertextarea = document.getElementById("apidropdownmenuoptionscustomertextarea")
+
+                apidropdownmenuoptionscustomermethodstext.innerText = apiMethodNow
+                if (await response.ok) {
+                    let count = 0
+                    let obj
+                    const data = JSON.parse(await response.text())
+                    obj = [{ path: "未登录" }]
+                    if (data.status == "O")
+                        obj = data.data
+                    obj.forEach(ele => {
+                        const inputele = document.createElement('input')
+                        const inputborder = document.createElement('div')
+                        apidropdownmenuoptions.appendChild(inputele)
+                        inputele.className = 'block px-4 py-2 w-full border-b-2 border-slate-200 text-left text-gray-800 outline-none'
+                        inputele.type = "button"
+                        inputele.value = ele.path
+                        inputele.id = `apidropdownmenuoptions${count}`
+                        inputborder.className = "-mt-0.5 bottom-0 left-0 h-0.5 bg-yellow-600 w-full left-1/2 transform -translate-x-1/2 scale-x-0"
+                        apidropdownmenuoptions.appendChild(inputborder)
+                        inputele.addEventListener("mouseenter", () => {
+                            anime({
+                                targets: inputele,
+                                backgroundColor: ["#FFFFFF", "#F0F0F0"],
+                                duration: 300,
+                                easing: "easeInOutQuint",
+                            })
+                            anime({
+                                targets: inputborder,
+                                scaleX: ["0%", "100%"],
+                                duration: 300,
+                                transformOrigin: ['50% 50%', '50% 50%'],
+                                easing: "easeOutQuint",
+                            })
+                        })
+                        inputele.addEventListener("mouseleave", () => {
+                            anime({
+                                targets: inputele,
+                                backgroundColor: ["#F0F0F0", "#FFFFFF"],
+                                duration: 300,
+                                easing: "easeOutQuint",
+                            })
+                            anime({
+                                targets: inputborder,
+                                scaleX: ["100%", "0%"],
+                                duration: 300,
+                                transformOrigin: ['50% 50%', '50% 50%'],
+                                easing: "easeOutQuint",
+                            })
+                        })
+                        inputele.addEventListener("focusin", () => {
+                            anime({
+                                targets: inputele,
+                                backgroundColor: ["#FFFFFF", "#F0F0F0"],
+                                duration: 300,
+                                easing: "easeOutQuint",
+                            })
+                            anime({
+                                targets: inputborder,
+                                scaleX: ["0%", "100%"],
+                                duration: 300,
+                                transformOrigin: ['100% 0%', '100% 0%'],
+                                easing: "easeOutQuint",
+                            })
+                        })
+                        inputele.addEventListener("focusout", () => {
+                            anime({
+                                targets: inputele,
+                                backgroundColor: ["#F0F0F0", "#FFFFFF"],
+                                duration: 300,
+                                easing: "easeOutQuint",
+                            })
+                            anime({
+                                targets: inputborder,
+                                scaleX: ["100%", "0%"],
+                                duration: 300,
+                                transformOrigin: ['50% 50%', '50% 50%'],
+                                easing: "easeOutQuint",
+                            })
+                        })
+                        inputele.addEventListener("click", (ev) => {
+                            if (!apidropdownmenu.classList.contains('hidden'))
+                                anime({
+                                    begin: () => apiNow = inputele.value,
+                                    targets: apidropdownmenu,
+                                    translateY: [0, -20],
+                                    opacity: [1, 0],
+                                    duration: 500,
+                                    easing: 'easeOutExpo',
+                                    complete: function () {
+                                        apidropdownmenu.classList.add('hidden')
+                                    }
+                                })
+                        })
+                        count++
+                    })
+                }
+
+                apidropdownmenuoptionscustomermethods.addEventListener("click", () => {
+                    const apidropdownmenuoptionscustomermethodstext = document.getElementById("apidropdownmenuoptionscustomermethodstext")
+                    const value = apidropdownmenuoptionscustomermethodstext.innerText
+                    anime({
+                        targets: apidropdownmenuoptionscustomermethodstext,
+                        opacity: [1, 0, 1],
+                        duration: 600,
+                        easing: "easeOutQuint",
+                        update: (a) => {
+                            if (a.progress >= 50)
+                                if (value == "POST") {
+                                    apidropdownmenuoptionscustomermethodstext.innerText = "GET"
+                                    apiMethodNow = "GET"
+                                }
+                                else {
+                                    apidropdownmenuoptionscustomermethodstext.innerText = "POST"
+                                    apiMethodNow = "POST"
+                                }
+                        }
+                    })
+                    if (value == "POST")
+                        anime({
+                            targets: apidropdownmenuoptionscustomermethods,
+                            backgroundColor: ["#A5F3FC", "#C7FFC4"],
+                            duration: 600,
+                            easing: "easeInQuint",
+                        })
+                    else
+                        anime({
+                            targets: apidropdownmenuoptionscustomermethods,
+                            backgroundColor: ["#C7FFC4", "#A5F3FC"],
+                            duration: 600,
+                            easing: "easeInQuint",
+                        })
+                })
+                apidropdownmenuoptionscustomertextarea.addEventListener("input", () => {
+                    apiNow = apidropdownmenuoptionscustomertextarea.value
+                })
+                apidropdownbutton.addEventListener("mouseenter", () => {
+                    anime({
+                        targets: apidropdownbutton,
+                        backgroundColor: ["#A599B3", "#948AA1"],
+                        easing: "easeOutQuint",
+                        duration: 300
+                    })
+                    anime({
+                        targets: ["#apidropdownbuttonline1", "#apidropdownbuttonline2", "#apidropdownbuttonline3"],
+                        width: ["100%", "0%"],
+                        translateX: el => { return el.clientWidth },
+                        easing: "easeOutQuint",
+                        duration: 300
+                    })
+                    setTimeout(() => {
+                        anime({
+                            targets: ["#apidropdownbuttonline1", "#apidropdownbuttonline2", "#apidropdownbuttonline3"],
+                            width: ["0%", "100%"],
+                            translateX: [0, 0],
+                            easing: "easeOutExpo",
+                            duration: 300
+                        })
+                    }, 400)
+                })
+                apidropdownbutton.addEventListener("mouseleave", () => {
+                    anime({
+                        targets: apidropdownbutton,
+                        backgroundColor: ["#948AA1", "#A599B3"],
+                        easing: "easeOutQuint",
+                        duration: 300
+                    })
+                })
+                apidropdownbutton.addEventListener("focus", () => {
+                    anime({
+                        targets: "#apidropdownbuttonline1",
+                        marginBottom: [0, 5],
+                        easing: "linear",
+                        duration: 100
+                    })
+                    anime({
+                        targets: "#apidropdownbuttonline3",
+                        marginTop: [0, 5],
+                        easing: "linear",
+                        duration: 100
+                    })
+                    anime({
+                        targets: apidropdownbutton,
+                        borderColor: ["#A599B3", "#9BBCD6"],
+                        borderWidth: 4,
+                        padding: 12,
+                        easing: "linear",
+                        duration: 100
+                    })
+                })
+                apidropdownbutton.addEventListener("focusout", () => {
+                    anime({
+                        targets: "#apidropdownbuttonline1",
+                        marginBottom: 0,
+                        easing: "linear",
+                        duration: 100
+                    })
+                    anime({
+                        targets: "#apidropdownbuttonline3",
+                        marginTop: 0,
+                        easing: "linear",
+                        duration: 100
+                    })
+                    anime({
+                        targets: apidropdownbutton,
+                        borderWidth: 0,
+                        padding: 16,
+                        easing: "easeInQuint",
+                        duration: 100
+                    })
+                })
+                let isBottom = false
+                const hideapidropdownarrow = () => {
+                    anime.timeline({
+                        autoplay: true
+                    }).add({
+                        targets: "#apidropdownmenu",
+                        height: ["312px", "288px"],
+                        easing: "easeOutQuint",
+                        duration: 400
+                    }, 0).add({
+                        targets: "#apidropdownarrow",
+                        opacity: [1, 0],
+                        scale: [1, 0.8],
+                        easing: "easeOutQuint",
+                        duration: 300
+                    }, 0)
+                }
+
+                apidropdownmenuoptions.addEventListener("scroll", () => {
+                    const scrollHeight = apidropdownmenuoptions.scrollHeight - apidropdownmenuoptions.offsetHeight
+                    const scrollNow = apidropdownmenuoptions.scrollTop + apidropdownmenuoptions.style.height
+                    if (scrollNow >= scrollHeight) {
+                        hideapidropdownarrow()
+                        isBottom = true
+                    }
+                    else if (isBottom) {
+                        anime({
+                            targets: "#apidropdownmenu",
+                            height: ["288px", "312px"],
+                            easing: "easeOutQuint",
+                            duration: 400
+                        })
+                        anime({
+                            targets: "#apidropdownarrow",
+                            opacity: [0, 1],
+                            scale: [0.8, 1],
+                            easing: "easeInQuint",
+                            duration: 300
+                        })
+                        isBottom = false
+                    }
+                })
+
+                // 下拉菜单切换动画
+                apidropdownbutton.addEventListener('click', function () {
+
+                    if (apidropdownmenu.classList.contains('hidden')) {
+                        anime({
+                            targets: apidropdownmenu,
+                            translateY: [-20, 0],
+                            opacity: [0, 1],
+                            duration: 500,
+                            easing: 'easeOutExpo',
+                            begin: function () {
+                                apidropdownmenu.classList.remove('hidden')
+                                if (apidropdownmenu.scrollHeight - apidropdownmenuoptions.offsetHeight == 0) {
+                                    anime({
+                                        targets: "#apidropdownmenu",
+                                        height: apidropdownmenu.scrollHeight - 24 + "px",
+                                        easing: "easeOutQuint",
+                                        duration: 400
+                                    })
+                                    anime({
+                                        targets: "#apidropdownarrow",
+                                        opacity: [1, 0],
+                                        scale: [1, 0.8],
+                                        easing: "easeOutQuint",
+                                        duration: 300
+                                    })
+                                }
+                            }
+                        })
+                    } else {
+                        anime({
+                            targets: apidropdownmenu,
+                            translateY: [0, -20],
+                            opacity: [1, 0],
+                            duration: 500,
+                            easing: 'easeOutExpo',
+                            complete: function () {
+                                apidropdownmenu.classList.add('hidden')
+                            }
+                        })
+                    }
+                })
+
+                // 点击其他地方关闭下拉菜单
+                window.addEventListener('click', function (e) {
+                    if (!apidropdownbutton.contains(e.target) && !apidropdownmenu.contains(e.target)) {
+                        anime({
+                            targets: apidropdownmenu,
+                            translateY: [0, -20],
+                            opacity: [1, 0],
+                            duration: 500,
+                            easing: 'easeOutExpo',
+                            complete: function () {
+                                apidropdownmenu.classList.add('hidden')
+
+                            }
+                        })
+                    }
+                })
+
+            })
+        </script>
+
+        <div class="fixed top-0 right-0 m-5 border-0" style="z-index: 5;">
+            <textarea id="headertextarea"
+                class="resize-none w-64 h-12 p-2 outline-none border-2 border-gray-200 rounded-lg shadow overflow-hidden focus:border-indigo-100"
+                placeholder="header ex.Content-Type=html,"></textarea>
+        </div>
+        <div class="fixed top-12 right-0 mt-8 mr-5 border-0" style="z-index: 5;">
+            <textarea id="jsontextarea"
+                class="resize-none w-64 h-44 p-2 outline-none border-2 border-gray-200 rounded-lg shadow overflow-hidden focus:border-indigo-100"
+                placeholder="json..."></textarea>
+            <button id="jsontextareaerrsubmitbutton"
+                class="absolute bottom-2 right-0 mb-1 mr-1 h-12 w-12 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg hover:bg-blue-700 focus:outline-none">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="fixed top-0 right-0 m-5 mt-72 border-0 z-0">
+            <div id="jsontextareaerr" class="w-64 mt-1 rounded-xl p-2 text-center justify-center items-center"
+                style="background-color: #FF7979;">
+                <span id="jsontextareaerrtext" class="text-center "></span>
+            </div>
+            <div id="jsontextareaerrforbacknon"
+                class="w-64 mt-1 rounded-xl p-2 text-center justify-center items-center opacity-0"
+                style="background-color: #FF7979;">
+                <span id="jsontextareaerrtextforbacknon" class="text-center "></span>
+            </div>
+        </div>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", async () => {
+                let show = ""
+                let isErrLastTime = false
+                let lastHeight = 0
+                const jsontextarea = document.getElementById("jsontextarea")
+                const headertextarea = document.getElementById("headertextarea")
+                const jsontextareaerr = document.getElementById("jsontextareaerr")
+                const jsontextareaerrforbacknon = document.getElementById("jsontextareaerrforbacknon")
+                const jsontextareaerrsubmitbutton = document.getElementById('jsontextareaerrsubmitbutton')
+
+                anime({ targets: jsontextareaerr, opacity: 0, duration: 0 })
+                const jsontextareaerranimationappear = anime({
+                    targets: jsontextareaerr,
+                    begin: () => {
+                    },
+                    opacity: { value: [0, 1], duration: 10, delay: 50 },
+                    translateY: ["-220%", "0%"],
+                    easing: "easeOutQuint",
+                    duration: 500,
+                    autoplay: false
+                })
+                const jsontextareaerranimationdisappear = anime({
+                    targets: jsontextareaerr,
+                    begin: () => {
+                    },
+                    translateY: { value: ["-220%", "0%"], duration: 0 },
+                    opacity: [1, 0],
+                    scale: [1, 0.85],
+                    easing: "easeInOutQuint",
+                    duration: 300,
+                    autoplay: false,
+                    complete: () => {
+                        document.getElementById("jsontextareaerrtext").innerText = show
+                    }
+                })
+                const jsontextareaerranimationchangeheight = (lastHeight, height) => {
+                    anime({
+                        targets: jsontextareaerr,
+                        height: [lastHeight + "px", height + "px"],
+                        duration: 300,
+                        easing: "easeOutQuint",
+                    })
+                }
+                jsontextareaerrsubmitbutton.addEventListener("click", async () => {
+                    const text = jsontextarea.value
+                    const body = (apiMethodNow == "POST") ? { body: text } : {}
+                    const headers = { 'Content-Type': 'application/json' }
+                    if (headertextarea.value)
+                        headertextarea.value.split(",").forEach(header => {
+                            const [key, value] = header.split("=")
+                            headers[key.trim()] = value.trim()
+                        })
+                    const response = await fetch(apiNow, { method: apiMethodNow, headers, ...body })
+                    playPageLoadingAnimeStart()
+                    try {
+                        const data = JSON.parse(await response.text())
+                        if (data.status == "OK") {
+                            playPageLoadingAnimeWithLastGreen()
+                            if (data.data)
+                                toResult(data.data)
+                        }
+                        else {
+                            playPageLoadingAnimeWithLastRed()
+                            showInfoHint(JSON.stringify(data), "err")
+                        }
+                    }
+                    catch (err) {
+                        playPageLoadingAnimeWithLastRed()
+                        showInfoHint(err.message, "err")
+                    }
+
+
+                    jsontextareaerrsubmitbutton.addEventListener('click', function () {
+                        // 这里编写您的提交逻辑
+                        anime({
+                            targets: jsontextareaerrsubmitbutton,
+                            scale: [1, 0.85, 1],
+                            duration: 350,
+                            easing: "easeOutQuint",
+                        })
+                    })
+
+                })
+                jsontextarea.addEventListener("input", () => {
+                    let value
+                    try {
+                        value = jsontextarea.value
+                        JSON.parse(value)
+                        if (isErrLastTime) {
+                            jsontextareaerranimationappear.pause()
+                            jsontextareaerranimationdisappear.seek(0)
+                            jsontextareaerranimationdisappear.play()
+                        }
+                        isErrLastTime = false
+                    }
+                    catch (err) {
+                        if (err) {
+                            show = err
+                            if (value === "" && isErrLastTime) {
+                                jsontextareaerranimationappear.pause()
+                                jsontextareaerranimationdisappear.seek(0)
+                                jsontextareaerranimationdisappear.play()
+                                isErrLastTime = false
+                                return
+                            }
+                            else if (!isErrLastTime && value !== "") {
+                                jsontextareaerranimationdisappear.pause()
+                                jsontextareaerranimationappear.seek(0)
+                                jsontextareaerranimationappear.play()
+                                isErrLastTime = true
+                            }
+                            document.getElementById("jsontextareaerrtext").innerText = show
+                            document.getElementById("jsontextareaerrtextforbacknon").innerText = show
+                            const heightNow = jsontextareaerrforbacknon.getBoundingClientRect().height
+                            jsontextareaerranimationchangeheight(lastHeight, heightNow)
+                            lastHeight = heightNow
+                        }
+                    }
+
+                })
+
+
+            })
+        </script>
+
+
+        <h3>列出全部</h3>
+        <input type="button" value="列出" id="dlist"
+            class="bg-orange-600 text-white font-bold py-1 px-3 rounded-2xl hover:bg-orange-200 hover:text-gray-900 transition duration-300 ease-in-out">
+        <script>
+            document.getElementById("dlist").addEventListener("click", async () => {
+                playPageLoadingAnimeStart()
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "readall", password: password, args: [chosendb] }) })
+                if (await response.ok) {
+                    try {
+                        const data = JSON.parse(await response.text())
+                        if (data.status == "O") {
+                            playPageLoadingAnimeWithLastGreen()
+                            if (data.data)
+                                toResult(data.data)
+                        }
+                        else {
+                            playPageLoadingAnimeWithLastRed()
+                            showInfoHint(data.msg, "err")
+                        }
+                    }
+                    catch (err) {
+                        playPageLoadingAnimeWithLastRed()
+                        showInfoHint(err.message, "err")
+                    }
+                }
+            })
+        </script>
+        <h3>查找</h3>
+        属性
+        <input type="text" id="dfkey">
+        值
+        <input type="text" id="dfvalue">
+        <input type="button" value="查找" id="dfind">
+        <h3>添加</h3>
+        属性
+        <input type="text" id="dikey">
+        值
+        <input type="text" id="divalue">
+        <input type="button" value="添加" id="dinsert">
+        <script>
+            document.getElementById("dinsert").addEventListener("click", async () => {
+                const ikey = document.getElementById("dikey").value
+                const ivalue = document.getElementById("divalue").value
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "insert", password: password, args: [ikey, ivalue, chosendb] }) })
+                if (response.ok)
+                    document.getElementById("result").innerText = JSON.stringify(JSON.parse(await response.text()).data)
+            })
+        </script>
+        <h3>删除</h3>
+        属性
+        <input type="text" id="ddkey">
+        值
+        <input type="text" id="ddvalue">
+        <input type="button" value="删除" id="ddelete">
+        <script>
+            document.getElementById("ddelete").addEventListener("click", async () => {
+                const dkey = document.getElementById("ddkey").value
+                const dvalue = document.getElementById("ddvalue").value
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "delete", password: password, args: [dkey, dvalue, chosendb] }) })
+                if (response.ok)
+                    document.getElementById("result").innerText = JSON.stringify(JSON.parse(await response.text()).data)
+            })
+
+        </script>
+        <h3>清空数据库</h3>
+        <input type="button" value="清空" id="dclean">
+        <script>
+
+            document.getElementById("dclean").addEventListener("click", async () => {
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "clean", password: password, args: [chosendb] }) })
+                if (response.ok)
+                    document.getElementById("result").innerText = JSON.stringify(JSON.parse(await response.text()).data)
+            })
+        </script>
+        <input type="button" value="重新创建" id="dbdelete">
+        <script>
+
+            document.getElementById("dbdelete").addEventListener("click", async () => {
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "deletedb", password: password }) })
+                if (response.ok)
+                    document.getElementById("result").innerText = JSON.stringify(JSON.parse(await response.text()).data)
+            })
+        </script>
+        <h1>项目控制</h1>
+        <input type="button" value="重启服务" id="prestart">
+        <input type="button" value="从git更新项目文件" id="pupdate">
+        <input type="button" value="显示日志" id="plog">
+        <script>
+            document.getElementById("prestart").addEventListener("click", async () => {
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "command", password: password, args: ["restart"] }) })
+                if (response.ok)
+                    document.getElementById("result").innerText = JSON.stringify(JSON.parse(await response.text()).data)
+            })
+            document.getElementById("pupdate").addEventListener("click", async () => {
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "command", password: password, args: ["updateproj"] }) })
+                if (response.ok)
+                    document.getElementById("result").innerText = JSON.stringify(JSON.parse(await response.text()).data)
+            })
+            document.getElementById("plog").addEventListener("click", async () => {
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "command", password: password, args: ["showlog"] }) })
+                if (response.ok)
+                    document.getElementById("result").innerText = JSON.stringify(JSON.parse(await response.text()).data)
+            })
+        </script>
+        <h1>命令</h1>
+        <h3>服务器</h3>
+        <input type="text" id="scommand">
+        <input type="button" value="执行" id="scommit">
+        <script>
+            let uponCount = 0
+
+            document.getElementById("scommand").addEventListener("keydown", async (event) => {
+                dlist.value = "处理中..."
+                dlist.classList.replace("bg-orange-600", "bg-orange-700")
+                dlist.classList.replace("hover:bg-orange-200", "hover:bg-orange-300")
+                dlist.classList.replace("px-3", "px-6")
+                dlist.value = "列出"
+                dlist.classList.replace("bg-orange-700", "bg-orange-600")
+                dlist.classList.replace("hover:bg-orange-300", "hover:bg-orange-200")
+                dlist.classList.replace("px-6", "px-3")
+                let command
+                switch (event.keyCode) {
+                    // tab
+                    case 9:
+                        event.preventDefault()
+                        command = document.getElementById('scommand').value
+                        document.getElementById("result").innerText = JSON.parse(await (await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "command", password: password, args: ["hint", command] }) })).text()).data
+                        window.scrollTo({ top: document.body.scrollHeight, left: 0, behavior: "smooth" })
+                        break
+                    // enter
+                    case 13:
+                        uponCount = 0
+                        document.getElementById('scommit').click()
+                        command = document.getElementById('scommand').value = ""
+                        break
+                    case 38:
+                        event.preventDefault()
+                        uponCount++
+                        document.getElementById("scommand").value = JSON.parse(await (await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "command", password: password, args: ["upon", uponCount] }) })).text()).data
+                        document.getElementById("scommand").scrollIntoView({ behavior: "smooth", block: "start" })
+                        break
+                    case 40:
+                        uponCount--
+                        event.preventDefault()
+                        if (uponCount < 1) {
+                            uponCount = 0
+                            document.getElementById("scommand").value = ""
+                        } else
+                            document.getElementById("scommand").value = JSON.parse(await (await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "command", password: password, args: ["upon", uponCount] }) })).text()).data
+                        document.getElementById("scommand").scrollIntoView({ behavior: "smooth", block: "start" })
+                        break
+                }
+            })
+            document.getElementById("scommit").addEventListener("click", async () => {
+                const command = document.getElementById("scommand").value
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "command", password: password, args: ["customer", command] }) })
+                if (response.ok)
+                    document.getElementById("result").innerText = JSON.parse(await response.text()).data
+                window.scrollTo({ top: document.body.scrollHeight, left: 0, behavior: "smooth" })
+
+            })
+
+        </script>
+        <h3>数据库</h3>
+        <input type="button" value="执行" id="dcommit">
+        <script>
+            document.getElementById("dcommit").addEventListener("click", async () => {
+                const command = document.getElementById("scommand").value
+                const response = await fetch("/admin", { method: "POST", headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: "command", password: password, args: ["mysql", command] }) })
+                if (response.ok)
+                    document.getElementById("result").innerText = JSON.stringify(JSON.parse(await response.text()).data)
+            })
+        </script>
+        <h1> 结果</h1>
+        <div id="result" class="flex flex-wrap justify-center items-start p-4 gap-10 w-full left-0"></div>
+
+        <script>
+            const toResult = (content) => {
+                const result = document.getElementById("result")
+                result.innerHTML = ""
+                if (Array.isArray(content)) {
+                    content.forEach(con => {
+                        setTimeout(() => {
+                            const div = document.createElement("div")
+                            const pre = document.createElement("pre")
+                            const code = document.createElement("code")
+                            div.className = "w-11/12 min-h-16 p-1 text-start items-center justify-center rounded shadow-2xl shadow-black bg-white break-words"
+                            pre.className = "bg-white rounded-xl overflow-hidden"
+                            code.className = "language-json"
+                            code.textContent = JSON.stringify(con, null, 2)
+                            result.appendChild(div)
+                            div.appendChild(pre)
+                            pre.appendChild(code)
+                            hljs.highlightElement(code)
+                        })
+                    }, 100)
+                }
+                else if (typeof content == "object") {
+                    const div = document.createElement("div")
+                    const pre = document.createElement("pre")
+                    const code = document.createElement("code")
+                    div.className = "w-11/12 min-h-16 p-1 text-start items-center justify-center rounded shadow-2xl shadow-black bg-white break-words"
+                    pre.className = "bg-white rounded-xl overflow-hidden"
+                    code.className = "language-json"
+                    code.textContent = JSON.stringify(content, null, 2)
+                    result.appendChild(div)
+                    div.appendChild(pre)
+                    pre.appendChild(code)
+                    hljs.highlightElement(code)
+                }
+
+            }
+        </script>
+    </body>
+
+</html>
