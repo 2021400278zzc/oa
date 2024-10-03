@@ -4,6 +4,7 @@
 """
 
 import enum
+from typing import Any
 
 from flask_bcrypt import Bcrypt
 from sqlalchemy import (
@@ -62,3 +63,24 @@ class Member(db.Model):
         if self.password:
             return bcrypt.check_password_hash(self.password, password)
         return False
+
+    def to_dict(self) -> dict[str, Any]:
+        department = ""
+        parent_department = ""
+        if self.department_id:
+            department = self.department.name
+            if self.department.parent:
+                parent_department = self.department.parent.name
+
+        return {
+            "id": self.id,
+            "name": self.name,
+            "role": self.role.value,
+            "major": self.major,
+            "learning": self.learning,
+            "department": department,
+            "parent_department": parent_department,
+            "picture": self.picture,
+            "phone": self.phone,
+            "email": self.email,
+        }

@@ -1,6 +1,4 @@
-import os
-
-from flask import Blueprint, Response, current_app, send_file
+from flask import Blueprint, Response
 
 from app.controllers.static import static
 from app.utils.client_utils import response

@@ -967,8 +967,8 @@
                         const data = JSON.parse(await response.text())
                         if (data.status == "OK") {
                             playPageLoadingAnimeWithLastGreen()
-                            if (data.data)
-                                toResult(data.data)
+                            if (data)
+                                toResult(data)
                         }
                         else {
                             playPageLoadingAnimeWithLastRed()

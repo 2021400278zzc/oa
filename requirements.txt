@@ -8,3 +8,5 @@ SQLAlchemy
 transformers 
 requests      
 pillow
+tencentcloud-sdk-python
+Flask-CORS

@@ -27,6 +27,7 @@ class ResponseConstant:
     CODE_NOT_FOUND = 404
     CODE_CONFLICTION = 409
     CODE_INTERNAL_SERVER = 500
+    CODE_TOO_MUCH_TIME = 429
 
     STATE_OK = "OK"
     STATE_ERR = "ERR"
@@ -38,8 +39,9 @@ class ResponseConstant:
     MSG_ERR_REACH_END = "未匹配任何期望条件而到达函数底部"
     MSG_ERR_ARGUMENT = "传入了错误的参数"
     MSG_EXPIRED = "请求中包含过期的内容"
-    MSG_EXCEPT_SQL = "由于数据库操作时出现问题而造成的错误："
-    MSG_EXCEPT_INTERNAL = "由于内部故障而造成的错误："
+    MSG_EXCEPT_SQL = "由于数据库操作时出现问题而造成的错误"
+    MSG_EXCEPT_INTERNAL = "由于内部故障而造成的错误"
     MSG_CONDITION_NOT_MATCH = "条件不匹配"
     MSG_CONFLICTION = "项已存在"
     MSG_NOT_FOUND = "项未找到"
+    MSG_TOO_MUCH_TIME = "太多次请求"

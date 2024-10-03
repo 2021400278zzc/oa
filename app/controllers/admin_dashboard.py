@@ -5,85 +5,80 @@ from flask import current_app as app
 from sqlalchemy import inspect, text
 
 from app.modules.sql import db
+from app.utils.logger import Log
 
 
 class AdminService:
+    @Log.track_execution()
     def admin(self, data):
-        try:
-            operation = data.get("operation")
-            password = data.get("password")
-            args = data.get("args", [])
+        operation = data.get("operation")
+        password = data.get("password")
+        args = data.get("args", [])
 
-            encrypt = hashlib.sha256("admin123".encode()).hexdigest()
+        encrypt = hashlib.sha256("admin123".encode()).hexdigest()
 
-            # 登录操作
-            if operation == "login" and args == "sign":
-                if hashlib.sha256(password.encode()).hexdigest() == encrypt:
-                    return encrypt
+        # 登录操作
+        if operation == "login" and args == "sign":
+            if hashlib.sha256(password.encode()).hexdigest() == encrypt:
+                return encrypt
 
-            elif operation == "login" and args == "verify":
-                return password == encrypt
+        elif operation == "login" and args == "verify":
+            return password == encrypt
 
-            # 确认密码正确
-            if password == encrypt:
-                if operation == "databases":
-                    inspector = inspect(db.engine)
-                    tables = inspector.get_table_names()  # 获取所有表名
-                    return tables
+        # 确认密码正确
+        if password == encrypt:
+            if operation == "databases":
+                inspector = inspect(db.engine)
+                tables = inspector.get_table_names()  # 获取所有表名
+                return tables
 
-                if operation == "readall":
-                    table_name = args[0]
-                    result = db.session.execute(text(f"SELECT * FROM {table_name}"))
-                    return [dict(zip(result.keys(), row)) for row in result]
+            if operation == "readall":
+                table_name = args[0]
+                result = db.session.execute(text(f"SELECT * FROM {table_name}"))
+                return [dict(zip(result.keys(), row)) for row in result]
 
-                if operation == "insert":
-                    table_name = args[2]
-                    key = args[0]
-                    value = args[1]
-                    db.session.execute(
-                        text(f"INSERT INTO {table_name} ({key}) VALUES ({value})")
-                    )
-                    db.session.commit()
-                    return f"Inserted {key}: {value} into {table_name}"
+            if operation == "insert":
+                table_name = args[2]
+                key = args[0]
+                value = args[1]
+                db.session.execute(
+                    text(f"INSERT INTO {table_name} ({key}) VALUES ({value})")
+                )
+                db.session.commit()
+                return f"Inserted {key}: {value} into {table_name}"
 
-                if operation == "delete":
-                    table_name = args[2]
-                    key = args[0]
-                    value = args[1]
-                    db.session.execute(
-                        text(f"DELETE FROM {table_name} WHERE {key} = '{value}'")
-                    )
-                    db.session.commit()
-                    return f"Deleted {key}: {value} from {table_name}"
+            if operation == "delete":
+                table_name = args[2]
+                key = args[0]
+                value = args[1]
+                db.session.execute(
+                    text(f"DELETE FROM {table_name} WHERE {key} = '{value}'")
+                )
+                db.session.commit()
+                return f"Deleted {key}: {value} from {table_name}"
 
-                if operation == "clean":
-                    table_name = args[0]
-                    db.session.execute(text(f"TRUNCATE TABLE {table_name}"))
-                    db.session.commit()
-                    return f"Cleaned {table_name}"
+            if operation == "clean":
+                table_name = args[0]
+                db.session.execute(text(f"TRUNCATE TABLE {table_name}"))
+                db.session.commit()
+                return f"Cleaned {table_name}"
 
-                if operation == "deletedb":
-                    db.session.execute(text("DROP DATABASE IF EXISTS oa;"))
-                    db.session.execute(text("CREATE DATABASE oa;"))
-                    return "Database reset"
+            if operation == "deletedb":
+                db.session.execute(text("DROP DATABASE IF EXISTS oa;"))
+                db.session.execute(text("CREATE DATABASE oa;"))
+                return "Database reset"
 
-                if operation == "apis":
-                    routes = []
-                    for rule in app.url_map.iter_rules():
-                        routes.append(
-                            {"path": str(rule), "methods": list(rule.methods)}
-                        )
-                    return routes
+            if operation == "apis":
+                routes = []
+                for rule in app.url_map.iter_rules():
+                    routes.append({"path": str(rule), "methods": list(rule.methods)})
+                return routes
 
-                if operation == "command":
-                    command = self.get_command(args)
-                    return self.execute_command(command)
+            if operation == "command":
+                command = self.get_command(args)
+                return self.execute_command(command)
 
-            return "NOT PERMITTED!"
-
-        except Exception as e:
-            print(e)
-            return str(e)
+        return "NOT PERMITTED!"
 
     def get_command(self, args):
         """根据参数生成系统命令"""

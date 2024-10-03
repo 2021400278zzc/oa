@@ -18,10 +18,15 @@
 │   ├── views/            # 视图层
 │   ├── controllers/      # 控制器层
 │   └── static/           # 静态文件目录
+│   └── modules/          # 解耦化的模块
 ├── config/               # 配置文件
 │   ├── development.py    # 开发环境配置
 │   ├── production.py     # 生产环境配置
 ├── migrations/           # 数据库迁移目录
+├─public                  # 静态文件位置
+│  ├─user
+│  │  └─picture           # 用户头像
+│  └─www                  # 开发用控制台
 ├── .env                  # 环境变量配置
 ├── README.md             # 项目描述文件
 └── run.py                # 项目启动文件
