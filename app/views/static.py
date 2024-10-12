@@ -1,3 +1,4 @@
+# 静态资源处理视图
 from flask import Blueprint, Response
 
 from app.controllers.static import static

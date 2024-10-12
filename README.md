@@ -1,7 +1,7 @@
 # DianChuang OA
 
 ## 项目简介
-这是一个基于 Flask 构建的后端系统，支持与 MySQL 数据库交互并通过远程 API 实现人工智能模型调用。该项目采用 MVC 架构设计，具备高灵活性和扩展性，能够适应从小流量到中等流量的业务需求。
+这是一个基于 Flask 构建的后端系统，支持与 MySQL 数据库交互并通过远程 API 实现人工智能模型调用。针对企业内部办公自动化管理进行设计，该项目采用 MVC 架构设计，具备高灵活性和扩展性，能够适应从小流量到中等流量的业务需求。
 
 ## 功能列表
 - 基于 Flask 的后端框架
@@ -38,40 +38,47 @@
 
 ## 安装步骤
 
-1. 克隆项目：
-   ```bash
-   git clone https://github.com/your/repo.git
-   cd your_project
-   ```
-
-2. 创建并激活 Conda 环境：
+1. 创建并激活 Conda 环境：
    ```bash
    conda create --name dcoa python=3.10
    conda activate dcoa
    ```
 
-3. 安装依赖：
+2. 安装依赖：
    ```bash
    pip install -r requirements.txt
    ```
 
-4. 配置环境变量：在项目根目录下创建 `.env` 文件，并添加数据库及 API 相关的配置信息：
+3. 配置环境变量：在项目根目录下创建 `.env` 文件，并添加数据库及 API 相关的配置信息：
    ```bash
-   SECRET_KEY=your_secret_key
-   MYSQL_HOST=localhost
-   MYSQL_USER=root
-   MYSQL_PASSWORD=your_password
-   MYSQL_DB=your_database
+   PORT=7801
+   DATABASE_URL=
+   MYSQL_HOST=
+   MYSQL_USER=
+   MYSQL_PASSWORD=
+   MYSQL_DB=
+   JWT_SECRET_KEY=
+   SECRET_KEY=
+   TENCENTCLOUD_SECRET_ID=
+   TENCENTCLOUD_SECRET_KEY=
+   SMS_SDK_APP_ID=
+   SIGN_NAME=
+   TEMPLATE_ID=
+   EMAIL_SMTP=
+   EMAIL_ACCOUNT=
+   EMAIL_PASSWORD=
+
+
    ```
 
-5. 初始化数据库迁移：
+4. 初始化数据库迁移：
    ```bash
    flask db init
    flask db migrate -m "Initial migration"
    flask db upgrade
    ```
 
-6. 启动项目：
+5. 启动项目：
    ```bash
    python run.py
    ```
@@ -97,11 +104,106 @@
 项目中的必要依赖：
 
 ```
-Flask==2.3.2
-Flask-MySQLdb==1.0.1
-Flask-Migrate==4.0.0
-python-dotenv==1.0.0
-SQLAlchemy==1.4.0
-transformers==4.12.5  # 如果使用 transformers API
-requests==2.28.0       # 用于调用远程 API
+Flask
+Flask-MySQLdb
+Flask-Migrate
+flask_jwt_extended
+flask-bcrypt
+python-dotenv
+SQLAlchemy
+transformers 
+requests      
+pillow
+tencentcloud-sdk-python
+Flask-CORS
 ```
+
+## 接口文档
+### `/auth` 接口
+
+1. **`login` (登录)**
+   - **请求方式**：`POST /auth/login`
+   - **请求参数**（JSON格式）：
+     ```json
+     {
+       "username": "your_username",   // 可选
+       "password": "your_password",   // 可选
+       "phone": "your_phone",         // 可选
+       "code": "your_code",           // 可选
+       "email": "your_email",         // 可选
+       "code": "your_email_code"      // 可选
+     }
+     ```
+     - **备注**：至少需要提供 `username+password`，`phone+code`，或 `email+code` 之一的组合。
+   
+   - **成功响应**（状态码：`200`）：
+     ```json
+     {
+       "token": "your_jwt_token",
+       "msg": "操作成功",
+       "status": "OK"
+     }
+     ```
+
+2. **`/send_code` (发送验证码)**
+   - **请求方式**：`POST /auth/send_code`
+   - **请求参数**（JSON格式）：
+     ```json
+     {
+       // phone 或 email 中的其中一个
+       "phone": "your_phone",    
+       "email": "your_email"     
+     }
+     ```
+   - **成功响应**（状态码：`200`）：
+     ```json
+     {
+       "data": null,
+       "msg": "操作成功",
+       "status": "OK"
+     }
+     ```
+
+### `/static` 接口
+
+1. **`/static/type/filename/option`**
+   - **请求方式**：`GET /static/{type}/{filename}/{option}`
+     - `type`: 文件类型，如图片、视频等。
+     - `filename`: 文件名。
+     - `option`: 可选参数，用于指定图像大小或其他文件选项。
+     - **备注**: 一般不需要手动指定。
+   
+   - **成功响应**（状态码：`200`）：以流的方式返回文件内容。
+
+### `/user` 接口
+
+1. **`/info` (获取用户信息)**
+   - **请求方式**：`GET /user/info`
+   - **请求头**：需要 `Authorization` 头部，格式为 `Bearer <token>`。
+   
+   - **成功响应**（状态码：`200`）：
+     ```json
+     {
+       "data": {
+          "department": "",
+          "email": "",
+          "id": "",
+          "learning": "",
+          "major": "",
+          "name": "",
+          "parent_department": "",
+          "phone": "",
+          "picture": "",
+          "role": "n"
+         },
+       "msg": "操作成功",
+       "status": "OK"
+     }
+     ```
+
+
+
+
+
+
+---

@@ -1,3 +1,4 @@
+# 用户认证控制器
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -89,17 +90,17 @@ def send_verification_code(email: str = "", phone: str = "") -> R:
 
 @Log.track_execution(when_error=False)
 def check_verify_code(code: str, email: str = "", phone: str = "") -> bool:
+    type = value = ""
     if is_value_valid(code, email):
-        with CRUD(Verification, type="email", value=email, code=code) as v:
-            if query := v.query_key():
-                v.need_update()
-                return query.first().check_code_valid(code)
-
-    if is_value_valid(code, phone):
-        with CRUD(Verification, type="phone", value=phone, code=code) as v:
-            if query := v.query_key():
-                v.need_update()
-                return query.first().check_code_valid(code)
+        type = "email"
+        value = email
+    elif is_value_valid(code, phone):
+        type = "phone"
+        value = phone
+    with CRUD(Verification, type=type, value=value, code=code) as v:
+        if query := v.query_key():
+            v.need_update()
+            return query.first().check_code_valid(code)
 
     return False
 

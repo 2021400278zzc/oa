@@ -7,7 +7,7 @@ from app.utils.constant import DataStructure as D
 from app.utils.database import CRUD
 from app.utils.logger import Log
 
-from . import department, verification
+from . import daily_report, department, member, period_task, verification
 from .department import Department
 from .member import Member
 
@@ -23,10 +23,13 @@ def dev_init(app: Flask) -> None:
                     d.add()
 
             with CRUD(Department, name="开发组") as d:
-                if not (res := d.query_key().first()):
-                    instance = d.create_instance()
-                    d.update(instance, name="OA开发组", parent_id=res.id)
+                if not d.query_key(name="OA开发组"):
+                    instance = d.create_instance(no_attach=True)
+                    d.update(
+                        instance, name="OA开发组", parent_id=d.query_key().first().id
+                    )
                     d.add(instance)
+
             with CRUD(Department, name="OA开发组") as d:
                 dep_id = d.query_key().first().id
 

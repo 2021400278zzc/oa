@@ -1,3 +1,4 @@
+# 静态资源控制器
 import os
 from io import BytesIO
 
@@ -8,10 +9,13 @@ from config.development import Config
 static_dir = Config.STATIC_FOLDER
 
 
+# /static/type/id
 def static(url_path: str) -> tuple[BytesIO | bytes, str] | None:
     type = url_path.split("/", 1)[0]
     match type:
         case "user":
+            return static_image(url_path), "image/jpeg"
+        case "report":
             return static_image(url_path), "image/jpeg"
         case "www":
             file_path = os.path.join(static_dir, type, url_path.split("/", 1)[-1])

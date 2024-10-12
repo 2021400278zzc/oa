@@ -1,3 +1,4 @@
+# 与用户信息相关的视图
 from flask import Blueprint, Response, request
 from flask_jwt_extended import create_access_token
 

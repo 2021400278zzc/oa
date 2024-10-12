@@ -14,7 +14,7 @@ from app.utils.logger import Log
 
 
 def require_role(*roles: str) -> Callable:
-    """装饰器，用以检测发送请求的用户是否在列出的角色中，否则返回认证失败响应。如果需要获取请求的角色或id，被装饰的函数必须包含键为role或user_id的参数
+    """装饰器，用以验证用户是否合法用户，并检测发送请求的用户是否在列出的角色中，否则返回认证失败响应。如果需要获取请求的角色或id，被装饰的函数必须包含键为role或user_id的参数
     Args:
         *roles: 在Member模型中包含的角色，空则允许所有角色
     :Example:
@@ -51,14 +51,13 @@ def require_role(*roles: str) -> Callable:
                 verify_jwt_in_request()
                 current_id = get_jwt_identity()
 
-                with CRUD(Member, id=current_id) as q:
-                    if (query := q.query_key()) is None:
-                        return response(template="NOT_FOUND")
+                if not (query := CRUD(Member, id=current_id).query_key()):
+                    return response(template="NOT_FOUND")
 
-                    res = query.first()
+                res = query.first()
 
-                    if roles and res.role.value not in roles:
-                        return response(template="AUTH")
+                if roles and res.role.value not in roles:
+                    return response(template="AUTH")
 
                 func_params = inspect.signature(fn).parameters
                 if "role" in func_params:

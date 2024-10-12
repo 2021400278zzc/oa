@@ -10,6 +10,12 @@ class Config:
     STATIC_FOLDER = "public"
     STATIC_URL_PATH = "/static"
 
+    UTC_OFFSET = 8  # 服务器时间与UTC时间的时差
+
+    WORK_NUMS = 5  # 线程池的同时最大执行数量
+
+    REPORT_GENERATE_DELAY_MINS = 5  # 生成日报需延后的分钟
+
     CODE_INTERVAL = 1  # 验证码的最短发送间隔
     CODE_VALID_TIME = 10  # 验证码的有效时间
 
@@ -32,5 +38,7 @@ class Config:
     EMAIL_SMTP = os.getenv("EMAIL_SMTP")
     EMAIL_ACCOUNT = os.getenv("EMAIL_ACCOUNT")
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False  # 禁用SQL警告

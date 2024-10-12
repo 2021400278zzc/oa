@@ -7,6 +7,8 @@ python-dotenv
 SQLAlchemy
 transformers 
 requests      
+APScheduler
 pillow
 tencentcloud-sdk-python
 Flask-CORS
+openai

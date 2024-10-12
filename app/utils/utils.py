@@ -1,4 +1,5 @@
-from typing import Any, Literal
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 
 def is_value_valid(*args: Any) -> bool:
@@ -19,4 +20,40 @@ def unpack_value(content: dict, *args: str) -> tuple[Any, ...]:
     Returns:
         tuple ([Any, ...]): 返回的元组对象
     """
-    return tuple(content.get(arg) for arg in args)
+    return tuple(
+        (content.get(arg) for arg in args)
+        if isinstance(content, dict)
+        else [None] * len(args)
+    )
+
+
+class Timer:
+    def __init__(
+        self,
+        weeks: int = 0,
+        days: int = 0,
+        hours: int = 0,
+        minutes: int = 0,
+        seconds: int = 0,
+        milliseconds: int = 0,
+        microseconds: int = 0,
+    ) -> None:
+        self.weeks = weeks
+        self.days = days
+        self.hours = hours
+        self.minutes = minutes
+        self.seconds = seconds
+        self.milliseconds = milliseconds
+        self.microseconds = microseconds
+
+    def as_future(self) -> datetime:
+        """将现在时间与传入的时间相加，得出的未来时间，UTC"""
+        return datetime.now(timezone.utc) + timedelta(
+            self.days,
+            self.seconds,
+            self.microseconds,
+            self.milliseconds,
+            self.minutes,
+            self.hours,
+            self.weeks,
+        )

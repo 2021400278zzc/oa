@@ -38,6 +38,9 @@ class Member(db.Model):
     major = Column(String(255), nullable=False)  # 专业（班级）
     role = Column(Enum(Role), nullable=False)  # 角色
     learning = Column(String(255), nullable=False)  # 学习方向
+    # Reserved
+    # technical_expertis = Column(Text)  # 学习方向
+    # project_experience = Column(JSON)  # 历史项目经验
     department_id = Column(Integer, ForeignKey("departments.id"))  # 所属部门（组）
     picture = Column(
         String(255), default="/static/user/picture/default"
