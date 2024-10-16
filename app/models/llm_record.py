@@ -4,7 +4,7 @@
 
 import uuid
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import JSON, Column, DateTime, Enum, ForeignKey, String, Text, func
 
 from app.modules.sql import db
 
@@ -20,7 +20,12 @@ class LLMRecord(db.Model):
     method = Column(Enum("report", "task", name="llm_type_constraint"))
     # 发送的文本
     request_text = Column(Text, nullable=False)
+    # 发送的图片
+    request_images = Column(JSON, default=[])
     # 返回的文本
     received_text = Column(Text, nullable=False)
     # 调用时间，UTC
     created_at = Column(DateTime, default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<LLMRecord record_id={self.record_id}, user_id={self.user_id}>"

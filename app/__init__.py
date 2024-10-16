@@ -9,7 +9,7 @@ from app.modules.logger import console_handler, file_handler
 from app.modules.scheduler import scheduler
 from app.modules.sql import db, migrate
 from app.views import register_blueprints
-from config.development import Config
+from config import Config
 
 
 def create_app() -> Flask:

@@ -12,3 +12,5 @@ pillow
 tencentcloud-sdk-python
 Flask-CORS
 openai
+pytz
+marshmallow

@@ -1,5 +1,3 @@
-import sys
-
 from flask import Flask
 from flask_migrate import revision, upgrade
 
@@ -97,4 +95,4 @@ def dev_init(app: Flask) -> None:
                     )
 
     except Exception as e:
-        raise RuntimeError(f"Failed to initialize the db: {e}")
+        Log.error(f"Failed to initialize the db: {e}")

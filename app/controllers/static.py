@@ -4,21 +4,26 @@ from io import BytesIO
 
 from PIL import Image
 
-from config.development import Config
+from config import Config
 
 static_dir = Config.STATIC_FOLDER
 
 
-# /static/type/id
 def static(url_path: str) -> tuple[BytesIO | bytes, str] | None:
-    type = url_path.split("/", 1)[0]
-    match type:
+    """处理所请求的静态文件
+    Args:
+        url_path (str): 请求时的restful路径，诸如此类的路径/static/<type>/file_id/option
+    Returns:
+        (tuple[BytesIO | bytes, str] | None): 可能返回的内容：二进制数据、具有文件类型的二进制数据、None
+    """
+    file_type = url_path.split("/", 1)[0]
+    match file_type:
         case "user":
             return static_image(url_path), "image/jpeg"
         case "report":
             return static_image(url_path), "image/jpeg"
         case "www":
-            file_path = os.path.join(static_dir, type, url_path.split("/", 1)[-1])
+            file_path = os.path.join(static_dir, file_type, url_path.split("/", 1)[-1])
             return open(file_path, "rb").read(), (
                 "text/css" if file_path.endswith(".css") else "text/plain"
             )
@@ -26,13 +31,14 @@ def static(url_path: str) -> tuple[BytesIO | bytes, str] | None:
 
 
 def static_image(url: str) -> BytesIO:
+    """处理图像静态文件"""
     scale = ""
-    type, *path, filename = url.split("/")
+    file_type, *path, filename = url.split("/")
 
     if url.endswith("x") and url[-2].isdigit() and url[-3] == "/":
-        type, *path, filename, scale = url.split("/")
+        file_type, *path, filename, scale = url.split("/")
 
-    file_path = os.path.join(static_dir, type, "/".join(path), filename + ".png")
+    file_path = os.path.join(static_dir, file_type, "/".join(path), filename + ".png")
 
     int_scale = 0
     if scale:

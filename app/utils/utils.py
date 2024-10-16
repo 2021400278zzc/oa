@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import pytz
+
 
 def is_value_valid(*args: Any) -> bool:
     """值是否不为None, "", 0, False, []
@@ -28,6 +30,8 @@ def unpack_value(content: dict, *args: str) -> tuple[Any, ...]:
 
 
 class Timer:
+    """统一UTC时间的时间类"""
+
     def __init__(
         self,
         weeks: int = 0,
@@ -47,7 +51,7 @@ class Timer:
         self.microseconds = microseconds
 
     def as_future(self) -> datetime:
-        """将现在时间与传入的时间相加，得出的未来时间，UTC"""
+        """将现在时间与实例传入的时间相加，得出的未来时间，UTC"""
         return datetime.now(timezone.utc) + timedelta(
             self.days,
             self.seconds,
@@ -57,3 +61,51 @@ class Timer:
             self.hours,
             self.weeks,
         )
+
+    def as_past(self) -> datetime:
+        """将现在时间与实例传入的时间相减，得出的过去时间，UTC"""
+        return datetime.now(timezone.utc) - timedelta(
+            self.days,
+            self.seconds,
+            self.microseconds,
+            self.milliseconds,
+            self.minutes,
+            self.hours,
+            self.weeks,
+        )
+
+    @staticmethod
+    def date_to_utc(
+        tz: str,
+        day: int | None = None,
+        hour: int | None = None,
+        minute: int | None = None,
+        second: int | None = None,
+    ) -> datetime:
+        """修改本地日期的日时分秒并转换至utc"""
+        local_tz = pytz.timezone(tz)
+        now = datetime.now(local_tz)
+
+        new_time = now.replace(
+            day=day if day is not None else now.day,
+            hour=hour if hour is not None else now.hour,
+            minute=minute if minute is not None else now.minute,
+            second=second if second is not None else now.second,
+        )
+
+        return new_time.astimezone(pytz.utc)
+
+    @staticmethod
+    def js_to_utc(js_datetime: str) -> datetime:
+        """将js格式的时间转为datetime\n
+        **js_datetime**: Tue Oct 15 2024 13:13:34 GMT+0800 (Taipei Standard Time)
+        """
+        local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z (%Z)")
+        utc_date = local_date.astimezone(pytz.utc)
+
+        return utc_date
+
+    @staticmethod
+    def utc_now() -> datetime:
+        """生成现在的utc时间"""
+        return datetime.now(timezone.utc)

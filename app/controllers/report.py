@@ -1,4 +1,5 @@
 # 日报控制器
+import json
 import os
 from datetime import datetime
 from uuid import uuid4
@@ -7,24 +8,26 @@ from PIL import Image
 from werkzeug.datastructures import FileStorage
 
 from app.models.daily_report import DailyReport
-from app.models.llm_record import LLMRecord
 from app.models.period_task import PeriodTask
+from app.modules.llm import create_completion
 from app.modules.pool import submit_task
 from app.utils.constant import LLMTemplate as LLM
 from app.utils.constant import LocalPath as Local
-from app.utils.constant import ResponseConstant as R
 from app.utils.constant import UrlTemplate as Url
 from app.utils.database import CRUD
 from app.utils.logger import Log
 from app.utils.utils import Timer
-from config.development import Config
+from config import Config
 
 
 @Log.track_execution(when_error="")
-def create_report(id: str, text: str, pictures: list[FileStorage]) -> str:
-    """创建日报，并将图片唯一命名以PNG方式保存至本地
+def create_report(
+    user_id: str, report_id: str, report_text: str, pictures: list[FileStorage]
+) -> str:
+    """填写日报，并将图片唯一命名以PNG方式保存至本地。尽管指明的是创建日报，但是日报实际上在每日的0时30分生成
     Args:
-        id (str): 用户id
+        user_id (str): 用户id
+        report_id (str): 日报id
         text (str): 日报内容
         pictures (list[FileStorage]): 图片的form数据，以列表方式传入
     Returns:
@@ -33,26 +36,20 @@ def create_report(id: str, text: str, pictures: list[FileStorage]) -> str:
 
     picture_urls, picture_paths = save_pictures(pictures)
 
-    with CRUD(
-        DailyReport,
-        user_id=id,
-        report_text=text,
-        report_picture=picture_urls,
-        generating=True,
-    ) as report:
-        instance = report.add()
+    with CRUD(DailyReport, user_id=user_id, report_id=report_id) as report:
+        report.update(
+            report_text=report_text, report_picture=picture_urls, generating=True
+        )
 
     delay_time = Timer(minutes=Config.REPORT_GENERATE_DELAY_MINS)
-    submit_task(
-        generate_report_review, instance.report_id, picture_paths, delay=delay_time
-    )
+    submit_task(generate_report_review, report_id, picture_paths, delay=delay_time)
 
-    return instance.report_id
+    return report_id
 
 
 @Log.track_execution(when_error=False)
 def update_report(
-    id: str, report_id: str, text: str, pictures: list[FileStorage]
+    user_id: str, report_id: str, text: str, pictures: list[FileStorage]
 ) -> bool:
     """暂未使用（未计划的）"""
 
@@ -92,42 +89,65 @@ def save_pictures(pictures: list[FileStorage]) -> tuple[list, list]:
 
 @Log.track_execution()
 def generate_report_review(report_id: str, picture_path: list[str]) -> None:
+    """生成日报评价并传入至数据库中
+
+    Args:
+        report_id (str): 日报id
+        picture_path (list[str]): 图片本地路径
+
+    Raises:
+        所有错误最终会被写入至日志
+    """
     if not (q_report := CRUD(DailyReport, report_id=report_id).query_key()):
         raise FileNotFoundError(
-            "task generate_report_review: 无法找到指定用户的日报记录。"
+            "report generate_report_review: 无法找到指定用户的日报记录。"
         )
     report: DailyReport = q_report.first()
 
-    if not (q_task := CRUD(PeriodTask, assignee_id=report.user_id).query_key()):
-        raise FileNotFoundError(
-            "task generate_report_review: 无法找到指定用户的任务记录。"
-        )
+    with CRUD(PeriodTask, assignee_id=report.user_id) as i_task:
+        if not (
+            q_task := i_task.query_key(
+                i_task.model.start_time < report.created_at,
+                i_task.model.end_time > report.created_at,
+            )
+        ):
+            raise FileNotFoundError(
+                "task generate_report_review: 无法找到指定用户的任务记录。"
+            )
     task: PeriodTask = q_task.first()
 
     task_days = (task.end_time - task.start_time).day
-    elapsed_days = datetime.now() - task.start_timeq
+    elapsed_days = datetime.now() - task.start_time
     previous_task_describe = task.completed_task_description
     daily_task = report.daily_task
     daily_report = report.report_text
 
-    prompt = LLM.DAILY_REPORT_REVIEW(
+    review_prompt = LLM.DAILY_REPORT_REVIEW(
         daily_task, task_days, elapsed_days, previous_task_describe, daily_report
     )
+    review = create_completion(review_prompt, report.user_id, "report", picture_path)
 
-    # TODO:Picture path, Access GPT
+    score_prompt = LLM.DAILY_REPORT_SCORE_JSON(review)
 
-    reply = ""
+    score = {}
+    err = ""
+    for _ in range(Config.LLM_MAX_RETRY_TIMES):
+        try:
+            json_score = create_completion(score_prompt, report.user_id, "report")
+            score = json.loads(json_score)
+            break
+        except Exception as e:
+            err = str(e)
+            continue
+    if not score:
+        raise ValueError(
+            f"json generate_report_review: 在生成json时出现了问题，最后发生的错误：{err}"
+        )
 
-    with CRUD(
-        LLMRecord,
-        user_id=report.user_id,
-        method="report",
-        request_text=prompt,
-        received_text=reply,
-    ) as record:
-        record.add()
-
-    LLM.DAILY_REPORT_REVIEW_SUMMARY(reply)
-
-    with CRUD() as u:
-        u.update(report, report)
+    with CRUD(DailyReport, report_id=report_id) as s:
+        s.update(
+            base_score=score["base"],
+            excess_score=score["excess"],
+            extra_score=score["extra"],
+            generating=False,
+        )

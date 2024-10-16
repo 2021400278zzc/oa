@@ -21,12 +21,15 @@ class VerifyType(enum.Enum):
 class Verification(db.Model):
     __tablename__ = "verifications"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)  # id
+    request_id = Column(Integer, primary_key=True, autoincrement=True)  # id
     type = Column(Enum(VerifyType), nullable=False)  # 联系方式
     value = Column(String(255), nullable=False)  # 联系方式的值
     code = Column(String(10), nullable=True)  # 验证码
     sent_at = Column(DateTime, nullable=False, default=func.now())  # 发送时间
     verified = Column(Boolean, default=False)
+
+    def __repr__(self) -> str:
+        return f"<Verification id={self.request_id}>"
 
     def generate_code(self, length: int = 6) -> str:
         """生成验证码与时间并附加至实例中"""
@@ -46,6 +49,7 @@ class Verification(db.Model):
         return False
 
     def is_generate_in_minutes(self, minutes: int) -> bool:
+        """验证该验证码是否是在某分钟内生成的"""
         return datetime.now(timezone.utc).replace(
             tzinfo=None
         ) - self.sent_at <= timedelta(minutes=minutes)

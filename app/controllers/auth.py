@@ -18,57 +18,67 @@ from app.utils.utils import is_value_valid
 
 @Log.track_execution(when_error=False)
 def login(
-    id: str = "", passwd: str = "", phone: str = "", email: str = "", code: str = ""
-) -> Literal[False] | str:
+    username: str = "",
+    password: str = "",
+    phone: str = "",
+    email: str = "",
+    code: str = "",
+) -> str:
     """登录成功后返回用户id
     Args:
-        id (str, optional): 用户id
-        passwd (str, optional): 用户密码
+        username (str, optional): 用户id
+        password (str, optional): 用户密码
         phone (str, optional): 用户手机号
         email (str, optional): 用户邮箱
         code (str, optional): 验证码，适用于手机和邮箱
     Returns:
-        (False | str): 返回False或用户id
+        str: 返回空字符串或用户id
     """
 
+    user_id = ""
+
     # id与密码登陆的情况
-    if is_value_valid(id, passwd):
-        with CRUD(Member, id=id) as r:
-            if res := r.query_key():
-                query = res.first()
-                if query.check_password(passwd):  # id存在且密码校验正确
-                    return query.id
+    if is_value_valid(username, password):
+        if query := CRUD(Member, id=username).query_key():
+            user = query.first()
+            if user.check_password(password):  # id存在且密码校验正确
+                user_id = user.id
 
     # 手机与验证码登陆的情况
     if is_value_valid(phone, code):
-        with CRUD(Member, phone=phone) as r:
-            if res := r.query_key():
-                query = res.first()
-                if check_verify_code(code, phone=query.phone):  # 手机和验证码正确
-                    return query.id
+        if query := CRUD(Member, phone=phone).query_key():
+            user = query.first()
+            if check_verify_code(code, phone=user.phone):  # 手机和验证码正确
+                user_id = user.id
 
     # 邮箱与验证码登陆的情况
     if is_value_valid(email, code):
-        with CRUD(Member, email=email) as r:
-            if res := r.query_key():
-                query = res.first()
-                if check_verify_code(code, email=query.email):  # 邮箱和验证码正确
-                    return query.id
+        if query := CRUD(Member, email=email).query_key():
+            user = query.first()
+            if check_verify_code(code, email=user.email):  # 邮箱和验证码正确
+                user_id = user.id
 
-    return False
+    return user_id
 
 
 @Log.track_execution(when_error=R.CODE_INTERNAL_SERVER)
-def send_verification_code(email: str = "", phone: str = "") -> R:
-    if email:
-        type = "email"
-        value = email
+def send_verification_code(email: str = "", phone: str = "") -> int:
+    """向指定的联系方式发送验证码
+    Args:
+        email (str, optional): 向邮箱发送验证码。
+        phone (str, optional): 向手机发送验证码。
+
+    Returns:
+        int: 返回响应码
+    """
+    contact_type = "email"
+    value = email
     if phone:
-        type = "phone"
+        contact_type = "phone"
         value = phone
 
     code = ""
-    with CRUD(Verification, type=type, value=value) as v:
+    with CRUD(Verification, type=contact_type, value=value) as v:
         if res := v.query_key():
             query = res.first()
             if query.is_generate_in_minutes(app.config["CODE_INTERVAL"]):
@@ -90,14 +100,22 @@ def send_verification_code(email: str = "", phone: str = "") -> R:
 
 @Log.track_execution(when_error=False)
 def check_verify_code(code: str, email: str = "", phone: str = "") -> bool:
-    type = value = ""
+    """检查联系方式与其验证码是否正确
+    Args:
+        code (str): 验证码
+        email (str, optional): 邮箱
+        phone (str, optional): 手机号
+    Returns:
+        bool: 成功或失败
+    """
+    contact_type = value = ""
     if is_value_valid(code, email):
-        type = "email"
+        contact_type = "email"
         value = email
     elif is_value_valid(code, phone):
-        type = "phone"
+        contact_type = "phone"
         value = phone
-    with CRUD(Verification, type=type, value=value, code=code) as v:
+    with CRUD(Verification, type=contact_type, value=value, code=code) as v:
         if query := v.query_key():
             v.need_update()
             return query.first().check_code_valid(code)
@@ -106,7 +124,8 @@ def check_verify_code(code: str, email: str = "", phone: str = "") -> bool:
 
 
 @Log.track_execution(when_error=R.CODE_INTERNAL_SERVER)
-def send_sms_code(phone: str, code: str) -> Literal[200, 500]:
+def send_sms_code(phone: str, code: str) -> int:
+    """使用手机短信发送验证代码"""
     cred = credential.Credential(
         app.config["TENCENTCLOUD_SECRET_ID"], app.config["TENCENTCLOUD_SECRET_KEY"]
     )
@@ -131,6 +150,7 @@ def send_sms_code(phone: str, code: str) -> Literal[200, 500]:
 
 
 def send_email_code(to_email: str, code: str) -> Literal[200, 500]:
+    """使用邮箱发送验证代码"""
     try:
         from_email = app.config["EMAIL_ACCOUNT"]
         email_password = app.config["EMAIL_PASSWORD"]

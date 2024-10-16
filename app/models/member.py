@@ -57,17 +57,23 @@ class Member(db.Model):
         UniqueConstraint("id", "email"),
     )
 
+    def __repr__(self) -> str:
+        return f"<Member id={self.id}>"
+
     def set_password(self, password: str = "") -> None:
+        """为该实例设置密码"""
         if not password:
             password = self.id[-3:] + "123456"
         self.password = bcrypt.generate_password_hash(password).decode()
 
     def check_password(self, password: str) -> bool:
+        """检查明文密码是否匹配该实例的密码"""
         if self.password:
             return bcrypt.check_password_hash(self.password, password)
         return False
 
     def to_dict(self) -> dict[str, Any]:
+        """将实例信息输出为不包含敏感字符与特别效果的字典"""
         department = ""
         parent_department = ""
         if self.department_id:

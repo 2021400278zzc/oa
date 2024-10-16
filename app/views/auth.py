@@ -1,12 +1,25 @@
 # 认证视图
 from flask import Blueprint, Response, request
 from flask_jwt_extended import create_access_token
+from marshmallow import Schema, ValidationError, fields, validate
 
 from app.controllers.auth import login, send_verification_code
 from app.utils.client_utils import response
-from app.utils.utils import unpack_value
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+
+
+class LoginSchema(Schema):
+    username = fields.String()
+    password = fields.String()
+    phone = fields.String(validate=validate.Length(equal=11))
+    email = fields.String(validate=validate.Email())
+    code = fields.String()
+
+
+class SendCodeSchema(Schema):
+    phone = fields.String(validate=validate.Length(equal=11))
+    email = fields.String(validate=validate.Email())
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -19,16 +32,16 @@ def login_view() -> Response:
     登录成功时返回token
     """
     try:
-        username, password, phone, email, code = unpack_value(
-            request.json, "username", "password", "phone", "email", "code"
-        )
+        schema = LoginSchema()
+        login_data = schema.load(request.json)
 
-        if not (user_id := login(username, password, phone, email, code)):
+        if not (user_id := login(**login_data)):
             return response(template="AUTH")
-
         access_token = create_access_token(user_id)
-        return response(data=access_token, template="OK")
 
+        return response(data=access_token, template="OK")
+    except ValidationError:
+        return response(template="ARGUMENT")
     except Exception as e:
         return response(str(e), template="INTERNAL")
 
@@ -42,9 +55,13 @@ def send_code_view() -> Response:
     发送成功返回OK
     """
     try:
-        email, phone = unpack_value(request.json, "email", "phone")
-        status_code = send_verification_code(email, phone)
-        return response(code=status_code)
+        schema = SendCodeSchema()
+        receiver_data = schema.load(request.json)
 
+        status_code = send_verification_code(**receiver_data)
+
+        return response(code=status_code)
+    except ValidationError:
+        return response(template="ARGUMENT")
     except Exception as e:
         return response(str(e), template="INTERNAL")

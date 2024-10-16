@@ -4,7 +4,6 @@ from typing import Any, Callable, Literal
 
 from flask import Response
 from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_request
-from flask_jwt_extended.exceptions import NoAuthorizationError
 from jwt.exceptions import ExpiredSignatureError
 
 from app.models.member import Member
@@ -68,10 +67,6 @@ def require_role(*roles: str) -> Callable:
                 return fn(*args, **kwargs)
             except ExpiredSignatureError:
                 return response(template="AUTH_EXPIRED")
-
-            except NoAuthorizationError:
-                return response(template="AUTH")
-
             except Exception as e:
                 return response(str(e), template="INTERNAL")
 

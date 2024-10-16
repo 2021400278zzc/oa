@@ -10,6 +10,7 @@ from .user import user_bp
 
 
 def register_blueprints(app: Flask) -> None:
+    """注册所有蓝图至Flask中"""
     app.register_blueprint(admin_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(report_bp)

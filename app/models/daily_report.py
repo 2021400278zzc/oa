@@ -28,7 +28,7 @@ class DailyReport(db.Model):
     user_id = Column(String(20), ForeignKey("members.id"), nullable=False)
     # 每日应完成的内容
     daily_task = Column(Text, nullable=False)
-    # 日报内容，非空
+    # 日报内容
     report_text = Column(Text)
     # 图片路径数组，允许为空
     report_picture = Column(JSON, default=[])
@@ -42,7 +42,7 @@ class DailyReport(db.Model):
     excess_score = Column(Integer)
     # 额外分
     extra_score = Column(Integer)
-    # 是否正在生成中
+    # 是否正在生成评价中
     generating = Column(Boolean, nullable=False, default=False)
     # 创建时间，UTC
     created_at = Column(DateTime, default=func.now())

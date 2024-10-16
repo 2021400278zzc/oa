@@ -1,6 +1,3 @@
-from enum import Enum
-from typing import Any
-
 from flask_sqlalchemy.model import Model
 from flask_sqlalchemy.query import Query
 from sqlalchemy.exc import SQLAlchemyError
@@ -58,19 +55,26 @@ class CRUD(SQLStatus):
         return self.instance
 
     def need_update(self) -> None:
-        """对该实例的更改需要应用到数据库中"""
+        """对该实例的更改需要应用到数据库中
+        :Example:
+        .. code-block:: python
+            with CRUD(Model) as modify:
+                if query := modify.query_key():
+                    query.first().instance_method()  # 对该实例做出了更改
+                    modify.need_update()  # 将更改应用到数据库中
+        """
         self._need_commit = True
 
     def add(self, instance: Model = None, **kwargs) -> Model | None:
         """添加条目
         Args:
-            instance (Model, optional): 模型实例，当提供时会以该实例为基添加条目。不提供则使用类的实例。
+            instance (Model, optional): 模型实例，当提供时会以该实例为基添加条目。不提供则使用类传入的参数生成实例。
             **kwargs: 对该实例的属性做出额外的更改。
         Returns:
             (Model | None): 当操作成功时返回实例对象。否则返回None。
         """
         try:
-            instance = instance if instance else self.create_instance()
+            instance = instance or self.create_instance()
             # 对于函数中传入的kwargs，使用update函数以在实例中更新新的值
             if update := self.update(instance, **kwargs):
                 instance = update
@@ -85,17 +89,32 @@ class CRUD(SQLStatus):
             self.status = self.INTERNAL_ERR
         return None
 
-    def query_key(self, **kwargs) -> Query | None:
-        """通过指定的键值查询条目
+    def query_key(self, *args, **kwargs) -> Query | None:
+        """通过指定的条件查询条目
         Args:
-            **kwargs: 当提供kwargs时，会使用kwargs的值进行查询，否则使用创建实例时传入的kwargs进行查询。
+            *args: 可选参数，使用比较来过滤查询的内容
+            **kwargs: 当提供kwargs或args时，会使用kwargs或args的值进行查询，否则使用创建实例时传入的kwargs进行查询
+        **当args与kwargs皆传入时，将会同时查询两者均匹配的条件**
         Returns:
             (Query | None): 如果查询存在内容，则返回Query对象。否则返回None。
+        :Example:
+        .. code-block:: python
+            # 查询在某天的content为空的所有记录
+            with CRUD(Model, content=None) as q:
+                q.query_key(func.date(q.model.datetime) == my_date)
         """
         try:
-            kw = kwargs if kwargs else self.kwargs
-            query = self.model.query.filter_by(**kw)
-            if not query.all():
+            kw = kwargs or self.kwargs
+
+            query = self.model.query
+            # 仅表达式的情况
+            if args:
+                query = query.filter(*args)
+            # 仅键值的情况或表达式与键值的情况
+            if kw:
+                query = query.filter_by(**kw)
+
+            if not query.first():
                 self.status = self.NOT_FOUND
                 return None
             return query
@@ -132,11 +151,18 @@ class CRUD(SQLStatus):
             self.status = self.INTERNAL_ERR
         return None
 
-    def delete(self, instance: Model = None, first_record=False, **kwargs) -> bool:
+    def delete(self, instance: Model = None, all_records=False, **kwargs) -> bool:
+        """删除条目
+        Args:
+            instance (Model, optional): 需要删除的实例，如不提供则使用类的实例或传入参数进行查询以删除
+            all_records (bool, optional): 是否删除所有记录，否则仅删除第一个记录。默认为否。
+        Returns:
+            bool: 成功或失败
+        """
         try:
             query = self.query_key() or self.query_key(**kwargs)
             if query:
-                query = query.first() if first_record else query
+                query = query if all_records else query.first()
                 query.delete()
 
             db.session.delete(instance)
@@ -149,56 +175,6 @@ class CRUD(SQLStatus):
             self.error = e
             self.status = self.INTERNAL_ERR
         return False
-
-    def query_to_dict(self, *exclude_keys: str):
-        """将记录实例转为字典，并排除不需要的键
-
-        Args:
-            instance (Model): _description_
-
-        Returns:
-            _type_: _description_
-        """
-        if not (query := self.query_key()):
-            return {}
-
-        instance = query.first()
-
-        instance_dict = {
-            k: v if not isinstance(v, Enum) else v.value
-            for k, v in {
-                column.name: getattr(instance, column.name)
-                for column in self.model.__table__.columns
-            }.items()
-        }
-
-        keys = [key.split(".") for key in exclude_keys]
-
-        def filter(dic: dict, paths: list[str]) -> dict:
-            result = {}
-
-            # 对每个顶层键进行判别，如果不存在排除则添加至result
-            for key in dic:
-                if not any(path[0] == key for path in paths):
-                    result[key] = dic[key]
-
-            # 对需要进行处理的键进行判别
-            for path in paths:
-                # 当需要处理的顶层键在字典中时才进行处理
-                if path[0] in dic:
-                    # 当该需要处理的键只有单元素时，将该键设为空
-                    if len(path) == 1:
-                        continue
-                    # 否则开始进入递归处理流程
-                    if path[0] not in result:
-                        result[path[0]] = {}
-                    if isinstance(dic[path[0]], dict):
-                        result[path[0]] = filter(
-                            dic[path[0]], [p[1:] for p in paths if p[0] == path[0]]
-                        )
-            return result
-
-        return filter(instance_dict, keys)
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         if self.error or exc_type or exc_val or exc_tb:
