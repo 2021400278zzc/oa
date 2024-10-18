@@ -11,6 +11,7 @@ from app.models.daily_report import DailyReport
 from app.models.period_task import PeriodTask
 from app.modules.llm import create_completion
 from app.modules.pool import submit_task
+from app.utils.constant import LLMStructure as LLMS
 from app.utils.constant import LLMTemplate as LLM
 from app.utils.constant import LocalPath as Local
 from app.utils.constant import UrlTemplate as Url
@@ -122,32 +123,24 @@ def generate_report_review(report_id: str, picture_path: list[str]) -> None:
     daily_task = report.daily_task
     daily_report = report.report_text
 
-    review_prompt = LLM.DAILY_REPORT_REVIEW(
+    review_prompt = LLM.DAILY_REPORT_REVIEW_JSON(
         daily_task, task_days, elapsed_days, previous_task_describe, daily_report
     )
-    review = create_completion(review_prompt, report.user_id, "report", picture_path)
 
-    score_prompt = LLM.DAILY_REPORT_SCORE_JSON(review)
-
-    score = {}
-    err = ""
-    for _ in range(Config.LLM_MAX_RETRY_TIMES):
-        try:
-            json_score = create_completion(score_prompt, report.user_id, "report")
-            score = json.loads(json_score)
-            break
-        except Exception as e:
-            err = str(e)
-            continue
-    if not score:
-        raise ValueError(
-            f"json generate_report_review: 在生成json时出现了问题，最后发生的错误：{err}"
-        )
+    review = create_completion(
+        review_prompt,
+        report.user_id,
+        "report",
+        picture_path,
+        dictionary_like=True,
+        response_format=LLMS.DailyReport,
+    )
 
     with CRUD(DailyReport, report_id=report_id) as s:
         s.update(
-            base_score=score["base"],
-            excess_score=score["excess"],
-            extra_score=score["extra"],
+            report_review=review,
+            basic_score=review["basic"]["score"],
+            excess_score=review["excess"]["score"],
+            extra_score=review["extra"]["score"],
             generating=False,
         )

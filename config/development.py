@@ -7,7 +7,7 @@ load_dotenv()
 
 
 class Config:
-    PORT = 7802
+    PORT = 7801
 
     STATIC_FOLDER = "public"
     STATIC_URL_PATH = "/static"

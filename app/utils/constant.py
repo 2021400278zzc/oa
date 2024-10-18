@@ -1,3 +1,6 @@
+from pydantic import BaseModel
+
+
 class DataStructure:
     """基本的数据结构"""
 
@@ -47,6 +50,28 @@ class ResponseConstant:
     MSG_TOO_MUCH_TIME = "太多次请求"
 
 
+class LLMStructure:
+    """存储适用于openaiAPI的结构体"""
+
+    class DailyReport(BaseModel):
+        """日报评分"""
+
+        class Review(BaseModel):
+            review: str
+            score: int
+
+        basic: Review
+        excess: Review
+        extra: Review
+        total: Review
+
+    class DailySummary:
+        """每日任务总结与下个任务"""
+
+        completion_status: str
+        next_task: str
+
+
 class TemplateString:
     """
     模板字符串生成器\n
@@ -65,6 +90,8 @@ class TemplateString:
 
 
 class LocalPath:
+    """本地路径"""
+
     STATIC_FOLDER = "public"
     REPORT_PICTURE = "public/report/daily"
 
@@ -77,7 +104,9 @@ class UrlTemplate:
 
 
 class LLMTemplate:
-    DAILY_REPORT_REVIEW = TemplateString(
+    """在该类下的每个常量均基于TemplateString生成的"""
+
+    DAILY_REPORT_REVIEW_JSON = TemplateString(
         """
 用户学习或任务情况总结：
 用户学习或任务（描述用户的学习任务或工作任务）：%s。
@@ -109,12 +138,12 @@ class LLMTemplate:
 图片说明：
 用户可能会上传包含学习进展或任务完成情况的图片。图片可能包括手写笔记、代码截图或任务进度报告。请根据图片内容和用户提供的文字描述，结合总结用户的学习或任务进展，确保图片信息与文本内容保持一致并进行全面总结。
 请为用户今天的学习或任务完成情况打分，并生成反馈。
-严格遵守以下模板进行回答，请勿偏离此模板：
-根据您今天的学习和任务完成情况，以下是您的评分：
-基本评分：{每日任务完成情况}{评分}。超额完成任务评分：{与任务相关的额外内容完成情况}{评分}。其他额外内容评分：{其他非任务相关内容的完成情况}{评分}。{赞赏或鼓励语句}{总分数}
+输出格式：
+请将所有评分内容以JSON格式返回，JSON结构如下：
+{ "basic": { "status": "每日任务完成情况", "score": 基本内容评分 }, "excess": { "status": "与任务相关的额外内容完成情况", "score": 超额内容评分 }, "extra": { "review": "其他非任务相关内容的完成情况", "score": 额外内容评分 }, "total": { "status": "赞赏或鼓励语句", "score": 总分数 } }
 """
     )
-    """生成日报总结\n\nArgs: 任务、任务总天数、任务已经过天数、任务之前完成情况、今日任务、今日完成情况"""
+    """生成日报总结\n\nArgs: 任务、任务总天数、任务已经过天数、任务之前完成情况、今日任务、今日完成情况\n\nReturn: JSON{ basic, excess, extra }"""
 
     DAILY_REPORT_SCORE_JSON = TemplateString(
         """
@@ -131,7 +160,7 @@ class LLMTemplate:
     )
     """生成日报分数JSON\n\nArgs: 日报总结\n\nReturn: JSON{ base, excess, extra }"""
 
-    DAILY_TASK_AND_OVERALL_SITUATION = TemplateString(
+    DAILY_SUMMARY = TemplateString(
         """
 必要的数据：
 任务简短概述：%s

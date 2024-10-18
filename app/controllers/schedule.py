@@ -83,7 +83,7 @@ def generate_daily_task_and_overall_situation() -> None:
                     daily_task = report.daily_task
                     daily_review = report.report_review
 
-            prompt = LLM.DAILY_TASK_AND_OVERALL_SITUATION(
+            prompt = LLM.DAILY_SUMMARY(
                 basic,
                 detail,
                 days,

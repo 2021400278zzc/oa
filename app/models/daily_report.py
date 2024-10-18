@@ -32,12 +32,10 @@ class DailyReport(db.Model):
     report_text = Column(Text)
     # 图片路径数组，允许为空
     report_picture = Column(JSON, default=[])
-    # 日报反馈，LLM提供
-    report_review = Column(Text)
-    # 精简化的日报反馈
-    report_review_summary = Column(Text)
+    # 日报反馈，LLM提供，JSON类型
+    report_review = Column(JSON)
     # 基本分
-    base_score = Column(Integer)
+    basic_score = Column(Integer)
     # 超额分
     excess_score = Column(Integer)
     # 额外分
