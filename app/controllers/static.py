@@ -1,15 +1,17 @@
 # 静态资源控制器
 import os
 from io import BytesIO
+from typing import Any
 
 from PIL import Image
 
+from app.utils.response import Response
 from config import Config
 
 static_dir = Config.STATIC_FOLDER
 
 
-def static(url_path: str) -> tuple[BytesIO | bytes, str] | None:
+def static(url_path: str) -> Response:
     """处理所请求的静态文件
     Args:
         url_path (str): 请求时的restful路径，诸如此类的路径/static/<type>/file_id/option
@@ -19,15 +21,20 @@ def static(url_path: str) -> tuple[BytesIO | bytes, str] | None:
     file_type = url_path.split("/", 1)[0]
     match file_type:
         case "user":
-            return static_image(url_path), "image/jpeg"
+            data: Any = static_image(url_path)
+            mime_type = "image/jpeg"
         case "report":
-            return static_image(url_path), "image/jpeg"
+            data = static_image(url_path)
+            mime_type = "image/jpeg"
         case "www":
             file_path = os.path.join(static_dir, file_type, url_path.split("/", 1)[-1])
-            return open(file_path, "rb").read(), (
-                "text/css" if file_path.endswith(".css") else "text/plain"
-            )
-    return None
+            with open(file_path, "rb") as f:
+                data = f.read()
+            mime_type = "text/css" if file_path.endswith(".css") else "text/plain"
+        case _:
+            return Response(Response.r.ERR_CONDITION_NOT_MATCH)
+
+    return Response(Response.r.OK, data=data, mime_type=mime_type)
 
 
 def static_image(url: str) -> BytesIO:

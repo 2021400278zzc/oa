@@ -7,7 +7,7 @@ python-dotenv
 SQLAlchemy
 transformers 
 requests      
-APScheduler
+Flask-APScheduler
 pillow
 tencentcloud-sdk-python
 Flask-CORS

@@ -54,6 +54,19 @@ class CRUD(SQLStatus):
             self.instance = self.model(**self.kwargs)
         return self.instance
 
+    def do_not_update(self) -> None:
+        """对该实例的更改并不需要应用到数据库中
+        :Example:
+        .. code-block:: python
+            with CRUD(Model) as modify:
+                if query := modify.query_key():
+                    query.first().instance_method()  # 对该实例做出了更改
+                    if err:
+                        modify.do_not_update()  # 当错误发生时，中断实例操作
+        """
+        self.error = AssertionError("User called rollback.")
+        self._need_commit = False
+
     def need_update(self) -> None:
         """对该实例的更改需要应用到数据库中
         :Example:

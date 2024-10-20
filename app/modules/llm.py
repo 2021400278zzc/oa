@@ -65,7 +65,7 @@ def create_completion(
 
     except Exception as e:
         err = e
-        Log.error(e)
+        Log.error(f"Failed while get reply from llm: {e}")
 
     if err or ((not reply) and retries <= Config.LLM_MAX_RETRY_TIMES):
         return create_completion(

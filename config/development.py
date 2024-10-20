@@ -1,5 +1,6 @@
 import os
 from datetime import timedelta
+from uuid import uuid4
 
 from dotenv import load_dotenv
 
@@ -18,7 +19,7 @@ class Config:
 
     REPORT_GENERATE_DELAY_MINS = 5  # 生成日报需延后的分钟
 
-    LLM_MAX_RETRY_TIMES = 10
+    LLM_MAX_RETRY_TIMES = 1
 
     CODE_INTERVAL = 1  # 验证码的最短发送间隔
     CODE_VALID_TIME = 10  # 验证码的有效时间
@@ -46,5 +47,7 @@ class Config:
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+    DISPOSABLE_APP_KEY = str(uuid4())
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False  # 禁用SQL警告

@@ -1,10 +1,11 @@
 # 任务视图
-from flask import Blueprint, Response, request
+from flask import Blueprint, request
 from marshmallow import Schema, ValidationError, fields
 
 from app.controllers.task import create_task, generate_task, modify_task
-from app.utils.client_utils import require_role, response
+from app.utils.auth import require_role
 from app.utils.constant import DataStructure as D
+from app.utils.response import Response
 
 task_bp = Blueprint("task", __name__, url_prefix="/task")
 
@@ -40,15 +41,17 @@ def create_task_view(user_id: str) -> Response:
         schema = CreateTaskSchema()
         task_data = schema.load(request.json)
 
-        code = create_task(user_id, **task_data)
+        res = create_task(user_id, **task_data)
 
-        return response(code=code)
+        return res.response()
+
     except ValidationError:
-        return response(template="ARGUMENT")
+        return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
     except Exception as e:
-        return response(str(e), template="INTERNAL")
+        return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)
 
 
+# TODO
 @task_bp.route("/modify_task", methods=["POST"])
 @require_role(D.admin, D.leader, D.sub_leader)
 def modify_task_view(user_id: str) -> Response:
@@ -59,11 +62,10 @@ def modify_task_view(user_id: str) -> Response:
 
         code = modify_task(user_id, **modify_data)
 
-        return response(code=code)
     except ValidationError:
-        return response(template="ARGUMENT")
+        return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
     except Exception as e:
-        return response(str(e), template="INTERNAL")
+        return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)
 
 
 @task_bp.route("/generate_task", methods=["POST"])
@@ -75,13 +77,10 @@ def generate_task_view(user_id: str) -> Response:
         schema = GenerateTaskSchema()
         generate_data = schema.load(request.json)
 
-        generation = generate_task(user_id, **generate_data)
+        res = generate_task(user_id, **generate_data)
 
-        if isinstance(generation, int):
-            return response(code=generation)
-
-        return response(data=generation, template="OK")
+        return res.response()
     except ValidationError:
-        return response(template="ARGUMENT")
+        return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
     except Exception as e:
-        return response(str(e), template="INTERNAL")
+        return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)

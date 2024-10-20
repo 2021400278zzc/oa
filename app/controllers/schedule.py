@@ -1,26 +1,24 @@
 # 任务计划
-import json
 import os
 from datetime import datetime
-
-from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import or_
 
 from app.controllers.report import generate_report_review
 from app.models.daily_report import DailyReport
 from app.models.period_task import PeriodTask
 from app.modules.llm import create_completion
 from app.modules.pool import submit_task
-from app.modules.scheduler import scheduler
-from app.utils.constant import LLMTemplate as LLM
+from app.utils.constant import LLMPrompt as LLM
+from app.utils.constant import LLMStructure as LLMS
 from app.utils.constant import LocalPath as Local
 from app.utils.database import CRUD
 from app.utils.logger import Log
+from app.utils.response import Response
 from app.utils.utils import Timer
 from config import Config
 
 
-def check_daily_report() -> None:
+@Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
+def check_daily_report() -> Response:
     """检查是否有未完成的日报"""
     # 计算前一天UTC的开始时间与结束时间
     yesterday_date = datetime.now().day - 1
@@ -36,13 +34,11 @@ def check_daily_report() -> None:
             query := report.query_key(
                 report.model.created_at > today_start,
                 report.model.created_at < today_end,
-                or_(
-                    report.model.report_review == None,
-                    report.model.report_review_summary == None,
-                ),
+                report.model.report_review == None,
             )
         ):
-            return
+            Log.info("检查日报已中止，因为并未找到任何项")
+            return Response(Response.r.OK)
         delay = 0
         for rep in query.all():
             image_path = [
@@ -57,12 +53,16 @@ def check_daily_report() -> None:
             )
             delay += 1
 
+    return Response(Response.r.OK)
 
-def generate_daily_task_and_overall_situation() -> None:
+
+@Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
+def daily_generation() -> Response:
     """生成每日任务，以及任务进度报告"""
     with CRUD(PeriodTask) as task:
         if not (query := task.query_key(task.model.end_time >= Timer.utc_now())):
-            return
+            Log.info("生成任务已中止，因为并未找到任何项")
+            return Response(Response.r.ERR_NOT_FOUND)
         task.need_update()
         tasks: list[PeriodTask] = query.all()
         # 对每个任务进行处理
@@ -95,49 +95,22 @@ def generate_daily_task_and_overall_situation() -> None:
             )
 
             # 操作LLM
-            reply_dict = {}
+            reply = create_completion(
+                prompt,
+                t.assignee_id,
+                "task",
+                dictionary_like=True,
+                response_format=LLMS.DailySummary,
+            )
 
-            while True:
-                try:
-                    reply = create_completion(prompt, t.assignee_id, "task")
-                    reply_dict = json.loads(reply)
-                    break
-                except:
-                    continue
-
-            completion = reply_dict.get("completion_status")
-            next_task = reply_dict.get("next_task")
+            completion = reply.get("completion_status")
+            next_task = reply.get("next_task")
 
             # 将内容存入各自的模型中
             t.completed_task_description = completion
             with CRUD(DailyReport) as r:
                 if not r.add(user_id=t.assignee_id, daily_task=next_task):
                     Log.error(r.error)
+                    return Response(Response.r.ERR_SQL)
 
-
-check_report_time = Timer.date_to_utc(Config.TIMEZONE, hour=0, minute=30, second=0)
-check_report_trigger = CronTrigger(
-    hour=check_report_time.hour,
-    minute=check_report_time.minute,
-    second=check_report_time.second,
-)
-scheduler.add_job(
-    check_daily_report,
-    check_report_trigger,
-    id="check_daily_report",
-    replace_existing=True,
-)
-
-
-daily_task_time = Timer.date_to_utc(Config.TIMEZONE, hour=2, minute=0, second=0)
-daily_task_trigger = CronTrigger(
-    hour=daily_task_time.hour,
-    minute=daily_task_time.minute,
-    second=daily_task_time.second,
-)
-scheduler.add_job(
-    generate_daily_task_and_overall_situation,
-    daily_task_trigger,
-    id="generate_daily_task_and_overall_situation",
-    replace_existing=True,
-)
+    return Response(Response.r.OK)

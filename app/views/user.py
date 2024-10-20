@@ -1,8 +1,10 @@
 # 与用户信息相关的视图
-from flask import Blueprint, Response
+from flask import Blueprint, request
+from flask.wrappers import Response
 
-from app.controllers.user import info
-from app.utils.client_utils import require_role, response
+from app.controllers.user import info, update_picture
+from app.utils.auth import require_role
+from app.utils.response import Response
 
 user_bp = Blueprint("user", __name__, url_prefix="/user")
 
@@ -16,9 +18,26 @@ def info_view(user_id) -> Response:
     查询成功时返回个人信息
     """
     try:
-        if res := info(user_id):
-            return response(data=res, template="OK")
+        res = info(user_id)
 
-        return response(template="NOT_FOUND")
+        return res.response()
     except Exception as e:
-        return response(str(e), template="INTERNAL")
+        return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)
+
+
+@user_bp.route("/update_picture", methods=["POST"])
+@require_role()
+def update_picture_view(user_id: str) -> Response:
+    """更新头像路由
+    用户需要通过form提交图片
+    键为picture
+    """
+    try:
+        if not (picture := request.files.getlist("picture")):
+            return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
+
+        res = update_picture(user_id, picture)
+
+        return res.response()
+    except Exception as e:
+        return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)

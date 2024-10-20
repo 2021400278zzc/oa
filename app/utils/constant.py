@@ -1,6 +1,23 @@
 from pydantic import BaseModel
 
 
+class TemplateString:
+    """
+    模板字符串生成器\n
+    :Example:
+    .. code-block:: python
+        CONSTANT = TemplateString("This is a %s %s.")
+        CONSTANT("fast", "fox")
+        "This is a fast fox."
+    """
+
+    def __init__(self, template: str) -> None:
+        self.template = template
+
+    def __call__(self, *args) -> str:
+        return self.template % args
+
+
 class DataStructure:
     """基本的数据结构"""
 
@@ -22,32 +39,58 @@ class SQLStatus:
 
 
 class ResponseConstant:
-    """用于响应的基本响应体常量"""
+    """用于响应的基本响应体对象"""
 
-    CODE_OK = 200
-    CODE_INVALID_ARGUMENTS = 400
-    CODE_AUTH_FAILED = 401
-    CODE_NOT_FOUND = 404
-    CODE_CONFLICTION = 409
-    CODE_INTERNAL_SERVER = 500
-    CODE_TOO_MUCH_TIME = 429
+    class Object:
+        """用于响应的基本响应状态"""
 
-    STATE_OK = "OK"
-    STATE_ERR = "ERR"
-    STATE_AUTH_ERR = "AUTH_ERR"
-    STATE_AUTH_EXPIRED = "AUTH_EXP"
+        OK = "OK"
 
-    MSG_OK = "操作成功"
-    MSG_ERR_AUTH = "认证失败"
-    MSG_ERR_REACH_END = "未匹配任何期望条件而到达函数底部"
-    MSG_ERR_ARGUMENT = "传入了错误的参数"
-    MSG_EXPIRED = "请求中包含过期的内容"
-    MSG_EXCEPT_SQL = "由于数据库操作时出现问题而造成的错误"
-    MSG_EXCEPT_INTERNAL = "由于内部故障而造成的错误"
-    MSG_CONDITION_NOT_MATCH = "条件不匹配"
-    MSG_CONFLICTION = "项已存在"
-    MSG_NOT_FOUND = "项未找到"
-    MSG_TOO_MUCH_TIME = "太多次请求"
+        AUTH_EXPIRED = "AUTH.EXP"
+        AUTH_FAILED = "AUTH.ERR"
+
+        ERR_CONDITION_NOT_MATCH = "ERR.NOT_MATCH"
+        ERR_CONFLICTION = "ERR.CONFLICT"
+        ERR_EXPIRED = "ERR.EXP"
+        ERR_INTERNAL = "ERR.INTERNAL"
+        ERR_INVALID_ARGUMENT = "ERR.ARG"
+        ERR_NOT_FOUND = "ERR.NOT_FOUND"
+        ERR_SQL = "ERR.SQL"
+        ERR_TOO_MUCH_TIME = "ERR.LIMIT"
+
+    class Code:
+        """用于响应的基本响应码"""
+
+        OK = 200
+
+        AUTH_EXPIRED = 419
+        AUTH_FAILED = 401
+
+        ERR_CONDITION_NOT_MATCH = 412
+        ERR_CONFLICTION = 409
+        ERR_EXPIRED = 410
+        ERR_INTERNAL = 500
+        ERR_INVALID_ARGUMENT = 400
+        ERR_NOT_FOUND = 404
+        ERR_SQL = 503
+        ERR_TOO_MUCH_TIME = 429
+
+    class Message:
+        """用于响应的基本响应消息"""
+
+        OK = "操作成功"
+
+        AUTH_EXPIRED = "认证过期"
+        AUTH_FAILED = "认证失败"
+
+        ERR_CONDITION_NOT_MATCH = "条件不匹配"
+        ERR_CONFLICTION = "所请求的内容与其他项产生了冲突"
+        ERR_EXPIRED = "请求中包含过期的内容"
+        ERR_INTERNAL = "内部错误"
+        ERR_INVALID_ARGUMENT = "传入了错误的参数"
+        ERR_NOT_FOUND = "项未找到"
+        ERR_SQL = "由于数据库操作时出现问题而造成的错误"
+        ERR_TOO_MUCH_TIME = "太多次请求"
 
 
 class LLMStructure:
@@ -65,28 +108,11 @@ class LLMStructure:
         extra: Review
         total: Review
 
-    class DailySummary:
+    class DailySummary(BaseModel):
         """每日任务总结与下个任务"""
 
         completion_status: str
         next_task: str
-
-
-class TemplateString:
-    """
-    模板字符串生成器\n
-    :Example:
-    .. code-block:: python
-        CONSTANT = TemplateString("This is a %s %s.")
-        CONSTANT("fast", "fox")
-        "This is a fast fox."
-    """
-
-    def __init__(self, template: str) -> None:
-        self.template = template
-
-    def __call__(self, *args) -> str:
-        return self.template % args
 
 
 class LocalPath:
@@ -94,6 +120,7 @@ class LocalPath:
 
     STATIC_FOLDER = "public"
     REPORT_PICTURE = "public/report/daily"
+    PROFILE_PICTURE = "public/user/picture"
 
 
 class UrlTemplate:
@@ -102,8 +129,11 @@ class UrlTemplate:
     REPORT_PICTURE = TemplateString("/static/report/daily/%s")
     """/static/report/daily/{uuid}"""
 
+    PROFILE_PICTURE = TemplateString("/static/user/picture/%s")
+    """/static/user/picture/{filename}"""
 
-class LLMTemplate:
+
+class LLMPrompt:
     """在该类下的每个常量均基于TemplateString生成的"""
 
     DAILY_REPORT_REVIEW_JSON = TemplateString(

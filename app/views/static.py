@@ -1,8 +1,8 @@
 # 静态资源处理视图
-from flask import Blueprint, Response
+from flask import Blueprint
 
 from app.controllers.static import static
-from app.utils.client_utils import response
+from app.utils.response import Response
 
 static_bp = Blueprint("static", __name__, url_prefix="/static")
 
@@ -15,12 +15,6 @@ def static_view(path: str) -> Response:
     try:
         res = static(path)
 
-        if res == None:
-            return response(template="NOT_FOUND")
-        if isinstance(res, tuple):
-            file_data, mime_type = res
-            return Response(file_data, 200, mimetype=mime_type)
-
-        return Response(res, 200)
+        return res.response()
     except Exception as e:
-        return response(str(e), template="NOT_FOUND")
+        return Response(Response.r.ERR_NOT_FOUND, message=e, immediate=True)

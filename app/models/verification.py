@@ -6,9 +6,10 @@ import enum
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from flask import current_app as app
-from sqlalchemy import Boolean, Column, DateTime, Enum, Integer, String, func
+from sqlalchemy import Boolean, Column, DateTime, Enum, String, func
 
 from app.modules.sql import db
 
@@ -21,12 +22,14 @@ class VerifyType(enum.Enum):
 class Verification(db.Model):
     __tablename__ = "verifications"
 
-    request_id = Column(Integer, primary_key=True, autoincrement=True)  # id
+    request_id = Column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )  # id
     type = Column(Enum(VerifyType), nullable=False)  # 联系方式
     value = Column(String(255), nullable=False)  # 联系方式的值
     code = Column(String(10), nullable=True)  # 验证码
     sent_at = Column(DateTime, nullable=False, default=func.now())  # 发送时间
-    verified = Column(Boolean, default=False)
+    verified = Column(Boolean, default=False)  # 该码已验证
 
     def __repr__(self) -> str:
         return f"<Verification id={self.request_id}>"
@@ -45,6 +48,7 @@ class Verification(db.Model):
             app.config["CODE_VALID_TIME"]
         ):
             self.code = None
+            self.verified = True
             return True
         return False
 

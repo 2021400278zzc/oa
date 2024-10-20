@@ -1,9 +1,10 @@
 # 日报视图
-from flask import Blueprint, Response, request
+from flask import Blueprint, request
 from marshmallow import Schema, ValidationError, fields
 
 from app.controllers.report import create_report
-from app.utils.client_utils import require_role, response
+from app.utils.auth import require_role
+from app.utils.response import Response
 
 report_bp = Blueprint("report", __name__, url_prefix="/report")
 
@@ -24,14 +25,13 @@ def create_report_view(user_id: str) -> Response:
         report_data = schema.load(request.json)
         pictures = request.files.getlist()  # 获取上传的图片
 
-        if not (create := create_report(user_id, pictures=pictures, **report_data)):
-            return response(template="INTERNAL")
+        res = create_report(user_id, pictures=pictures, **report_data)
 
-        return response(data={"uuid": create}, template="OK")
+        return res.response()
     except ValidationError:
-        return response(template="ARGUMENT")
+        return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
     except Exception as e:
-        return response(str(e), template="INTERNAL")
+        return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)
 
 
 @report_bp.route("/modify_report", methods=["POST"])
@@ -40,5 +40,7 @@ def modify_report_view() -> Response:
     try:
         pass
 
+    except ValidationError:
+        return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
     except Exception as e:
-        return response(str(e), template="INTERNAL")
+        return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)

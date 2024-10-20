@@ -1,10 +1,11 @@
 # 认证视图
-from flask import Blueprint, Response, request
-from flask_jwt_extended import create_access_token
+from flask import Blueprint
+from flask import Response as FlaskResponse
+from flask import request
 from marshmallow import Schema, ValidationError, fields, validate
 
 from app.controllers.auth import login, send_verification_code
-from app.utils.client_utils import response
+from app.utils.response import Response
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -23,7 +24,7 @@ class SendCodeSchema(Schema):
 
 
 @auth_bp.route("/login", methods=["POST"])
-def login_view() -> Response:
+def login_view() -> FlaskResponse:
     """登录路由
     - 学号与密码
     - 手机号与验证码
@@ -35,15 +36,13 @@ def login_view() -> Response:
         schema = LoginSchema()
         login_data = schema.load(request.json)
 
-        if not (user_id := login(**login_data)):
-            return response(template="AUTH")
-        access_token = create_access_token(user_id)
+        res = login(**login_data)
 
-        return response(data=access_token, template="OK")
+        return res.response()
     except ValidationError:
-        return response(template="ARGUMENT")
+        return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
     except Exception as e:
-        return response(str(e), template="INTERNAL")
+        return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)
 
 
 @auth_bp.route("/send_code", methods=["POST"])
@@ -58,10 +57,10 @@ def send_code_view() -> Response:
         schema = SendCodeSchema()
         receiver_data = schema.load(request.json)
 
-        status_code = send_verification_code(**receiver_data)
+        res: Response = send_verification_code(**receiver_data)
 
-        return response(code=status_code)
+        return res.response()
     except ValidationError:
-        return response(template="ARGUMENT")
+        return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
     except Exception as e:
-        return response(str(e), template="INTERNAL")
+        return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)

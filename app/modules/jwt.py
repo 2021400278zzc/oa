@@ -1,7 +1,6 @@
-from flask import Response
 from flask_jwt_extended import JWTManager
 
-from app.utils.client_utils import response
+from app.utils.response import Response
 
 jwt = JWTManager()
 
@@ -10,4 +9,4 @@ jwt = JWTManager()
 @jwt.unauthorized_loader
 def auth_failed(e) -> Response:
     """认证失败时的回调"""
-    return response(str(e), template="AUTH")
+    return Response(Response.r.AUTH_FAILED, message=e, immediate=True)

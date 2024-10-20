@@ -1,5 +1,4 @@
 # 日报控制器
-import json
 import os
 from datetime import datetime
 from uuid import uuid4
@@ -11,20 +10,21 @@ from app.models.daily_report import DailyReport
 from app.models.period_task import PeriodTask
 from app.modules.llm import create_completion
 from app.modules.pool import submit_task
+from app.utils.constant import LLMPrompt as LLM
 from app.utils.constant import LLMStructure as LLMS
-from app.utils.constant import LLMTemplate as LLM
 from app.utils.constant import LocalPath as Local
 from app.utils.constant import UrlTemplate as Url
 from app.utils.database import CRUD
 from app.utils.logger import Log
+from app.utils.response import Response
 from app.utils.utils import Timer
 from config import Config
 
 
-@Log.track_execution(when_error="")
+@Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
 def create_report(
     user_id: str, report_id: str, report_text: str, pictures: list[FileStorage]
-) -> str:
+) -> Response:
     """填写日报，并将图片唯一命名以PNG方式保存至本地。尽管指明的是创建日报，但是日报实际上在每日的0时30分生成
     Args:
         user_id (str): 用户id
@@ -38,14 +38,15 @@ def create_report(
     picture_urls, picture_paths = save_pictures(pictures)
 
     with CRUD(DailyReport, user_id=user_id, report_id=report_id) as report:
-        report.update(
+        if not report.update(
             report_text=report_text, report_picture=picture_urls, generating=True
-        )
+        ):
+            return Response(Response.r.ERR_SQL)
 
     delay_time = Timer(minutes=Config.REPORT_GENERATE_DELAY_MINS)
     submit_task(generate_report_review, report_id, picture_paths, delay=delay_time)
 
-    return report_id
+    return Response(Response.r.OK, data=report_id)
 
 
 @Log.track_execution(when_error=False)
