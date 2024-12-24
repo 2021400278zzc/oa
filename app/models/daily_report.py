@@ -25,9 +25,9 @@ class DailyReport(db.Model):
     # 日报ID
     report_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     # 用户ID，关联Member表
-    user_id = Column(String(20), ForeignKey("members.id"), nullable=False)
+    user_id = Column(String(20), ForeignKey("members.id"), nullable=True)
     # 每日应完成的内容
-    daily_task = Column(Text, nullable=False)
+    daily_task = Column(Text, nullable=True)
     # 日报内容
     report_text = Column(Text)
     # 图片路径数组，允许为空
@@ -40,8 +40,12 @@ class DailyReport(db.Model):
     excess_score = Column(Integer)
     # 额外分
     extra_score = Column(Integer)
+    #效率
+    efficiency = Column(Integer)
+    # 创新性
+    innovation = Column(Integer)
     # 是否正在生成评价中
-    generating = Column(Boolean, nullable=False, default=False)
+    generating = Column(Boolean, nullable=True, default=False)
     # 创建时间，UTC
     created_at = Column(DateTime, default=func.now())
     # 更新时间，UTC

@@ -8,7 +8,9 @@ from .static import static_bp
 from .task import task_bp
 from .test import test_bp
 from .user import user_bp
-
+from .gpt import gpt_bp
+from .daily_task import daily_task_bp
+from .daily_report import daily_report_bp
 
 def register_blueprints(app: Flask) -> None:
     """注册所有蓝图至Flask中"""
@@ -20,3 +22,6 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(task_bp)
     app.register_blueprint(test_bp)
     app.register_blueprint(user_bp)
+    app.register_blueprint(gpt_bp)
+    app.register_blueprint(daily_task_bp)
+    app.register_blueprint(daily_report_bp)

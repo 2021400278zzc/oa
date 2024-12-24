@@ -6,6 +6,7 @@ from flask_cors import CORS
 from app.models import dev_init
 from app.modules.jwt import jwt
 from app.modules.logger import console_handler, file_handler
+from app.modules.sched.daily_task_sched import PeriodTaskScheduler
 from app.modules.scheduler import init_scheduler
 from app.modules.sql import db, migrate
 from app.views import register_blueprints
@@ -23,7 +24,20 @@ def create_app() -> Flask:
 
     db.init_app(app)
     migrate.init_app(app, db)
+    # 在应用上下文中初始化和启动定时任务调度器
+    global period_task_scheduler
+    with app.app_context():
+        period_task_scheduler = PeriodTaskScheduler(app)
+        period_task_scheduler.start_scheduler()
+        logging.info("周期任务计分调度器已启动并完成初始化")
 
+    # 注册关闭回调
+    @app.teardown_appcontext
+    def shutdown_scheduler(exception=None):
+        global period_task_scheduler
+        if period_task_scheduler:
+            period_task_scheduler.stop_scheduler()
+            logging.info("周期任务计分调度器已关闭")
     register_blueprints(app)
 
     # !! 数据库初始化操作，仅开发使用
@@ -36,5 +50,7 @@ def create_app() -> Flask:
     app.logger.setLevel(logging.INFO)
     app.logger.addHandler(file_handler)
     app.logger.addHandler(console_handler)
+
+    
 
     return app

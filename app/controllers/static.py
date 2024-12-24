@@ -45,7 +45,7 @@ def static_image(url: str) -> BytesIO:
     if url.endswith("x") and url[-2].isdigit() and url[-3] == "/":
         file_type, *path, filename, scale = url.split("/")
 
-    file_path = os.path.join(static_dir, file_type, "/".join(path), filename + ".png")
+    file_path = os.path.join(static_dir, file_type, "/".join(path), filename)
 
     int_scale = 0
     if scale:

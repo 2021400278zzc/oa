@@ -1,8 +1,12 @@
 # 任务视图
-from flask import Blueprint, request
+import datetime
+from datetime import date
+from flask import Blueprint, jsonify, request
 from marshmallow import Schema, ValidationError, fields
-
-from app.controllers.task import create_task, generate_task, modify_task
+from app.models.department import Department
+from app.models.member import Member
+from app.modules.sql import db
+from app.controllers.task import *
 from app.utils.auth import require_role
 from app.utils.constant import DataStructure as D
 from app.utils.response import Response
@@ -32,6 +36,107 @@ class GenerateTaskSchema(Schema):
     end_time = fields.String(required=True)
     basic_task = fields.String(required=True)
 
+class DeleteTasksSchema(Schema):
+    """批量删除任务的验证Schema"""
+    task_ids = fields.List(fields.String(), required=True)
+
+@task_bp.route("/get_assignee_list", methods=["GET"])  
+@require_role(D.admin, D.leader, D.sub_leader)  
+def get_assignee_list_view(user_id: str):
+   """获取当前用户权限可见的成员列表"""
+   try:
+       # 获取当前用户信息
+       current_user = Member.query.get(user_id)
+       if not current_user:
+           return jsonify({
+               "status": "OK",
+               "data": []
+           })
+
+       # 根据角色获取可见成员列表
+       if current_user.role.value == "admin":
+           # 管理员可见所有成员
+           member_ids = db.session.query(Member.id).distinct().all()
+
+       elif current_user.role.value == "leader":
+           # leader可以看到三个开发组的成员
+           dev_dept_ids = (Department.query
+                         .filter(Department.name.in_(["开发组-前端", "开发组-后端", "开发组-游戏开发","开发组-OA开发"]))
+                         .with_entities(Department.id)
+                         .all())
+           # 将查询结果转换为ID列表
+           dev_dept_id_list = [d[0] for d in dev_dept_ids]
+           member_ids = (db.session.query(Member.id)
+                       .filter(Member.department_id.in_(dev_dept_id_list))
+                       .distinct()
+                       .all())
+
+       elif current_user.role.value == "subleader":  # sub_leader
+           # sub_leader只能看到自己部门
+           dept_id = current_user.department_id
+           member_ids = (db.session.query(Member.id)
+                       .filter(Member.department_id == dept_id)
+                       .distinct()
+                       .all())
+
+       # 提取成员ID并构建返回数据
+       assignee_list = [member_id[0] for member_id in member_ids]
+       print(f"User role: {current_user.role.value}, User ID: {user_id}, Assignee list: {assignee_list}")  
+
+       return jsonify({
+           "status": "OK",
+           "data": assignee_list
+       })
+
+   except Exception as e:
+       import traceback
+       print(traceback.format_exc())
+       return jsonify({
+           "status": "ERR_INTERNAL",
+           "msg": str(e)
+       }), 500
+
+@task_bp.route("/get_task", methods=["GET"])
+@require_role(D.admin, D.leader, D.sub_leader)
+def get_task_view():
+    """获取任务视图"""
+    try:
+        # 获取请求参数
+        assignee_id = request.args.get("assignee_id")
+        
+        if not assignee_id:
+            return jsonify({
+                "status": "ERR_INVALID_ARGUMENT",
+                "msg": "缺少 assignee_id",
+                "data": None
+            }), 400
+
+        # 自动获取今天的日期
+        today = datetime.now().date()
+
+        # 获取任务列表
+        tasks_data = get_task(assignee_id, today)
+
+        return jsonify({
+            "status": "OK",
+            "msg": "success",
+            "data": {
+                "date": today.strftime('%Y-%m-%d'),
+                "total_tasks": len(tasks_data),
+                "tasks": tasks_data
+            }
+        })
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({
+            "status": "ERR_INTERNAL",
+            "msg": str(e),
+            "data": None
+        }), 500
+
+
 
 @task_bp.route("/create_task", methods=["POST"])
 @require_role(D.admin, D.leader, D.sub_leader)
@@ -40,16 +145,43 @@ def create_task_view(user_id: str) -> Response:
     try:
         schema = CreateTaskSchema()
         task_data = schema.load(request.json)
-
+        
         res = create_task(user_id, **task_data)
-
+        print(res)
         return res.response()
-
+    
     except ValidationError:
         return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
     except Exception as e:
         return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)
 
+
+@task_bp.route("/period_tasks", methods=["GET"]) 
+@require_role(D.admin, D.leader, D.sub_leader) 
+def get_period_tasks_view(user_id: str):
+   """获取周期任务列表路由"""
+   # 从请求参数中获取user_id
+   request_user_id = request.args.get('user_id')
+   
+   # 如果请求中有user_id就使用请求的，否则使用当前登录用户的id
+   target_user_id = request_user_id if request_user_id else user_id
+   
+   return get_period_tasks_list(target_user_id)
+
+@task_bp.route("/get_found_period_tasks", methods=["GET"])
+@require_role(D.admin, D.leader, D.sub_leader)
+def get_found_period_tasks_view():
+    """获取周期任务列表路由"""
+    # 从请求头获取成员ID
+    member_id = request.headers.get('Session-Id')
+    if not member_id:
+        return jsonify({
+            "status": "ERR.INVALID_ARGUMENT",
+            "msg": "Missing Session-Id in headers",
+            "data": None
+        }), 400
+    
+    return get_period_tasks(member_id)
 
 # TODO
 @task_bp.route("/modify_task", methods=["POST"])
@@ -57,15 +189,20 @@ def create_task_view(user_id: str) -> Response:
 def modify_task_view(user_id: str) -> Response:
     """更改任务路由"""
     try:
+        # 加载并验证请求数据
         schema = ModifyTaskSchema()
         modify_data = schema.load(request.json)
 
-        code = modify_task(user_id, **modify_data)
+        # 调用业务逻辑处理任务
+        response = modify_task(user_id, **modify_data)
+        return jsonify(response)
 
     except ValidationError:
-        return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
+        # 返回验证错误响应
+        return jsonify({"error": "Invalid argument"}), 400
     except Exception as e:
-        return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)
+        # 返回内部服务器错误响应
+        return jsonify({"error": str(e)}), 500
 
 
 @task_bp.route("/generate_task", methods=["POST"])
@@ -84,3 +221,61 @@ def generate_task_view(user_id: str) -> Response:
         return Response(Response.r.ERR_INVALID_ARGUMENT, immediate=True)
     except Exception as e:
         return Response(Response.r.ERR_INTERNAL, message=e, immediate=True)
+
+@task_bp.route("/delete_tasks", methods=["POST"])
+@require_role(D.admin, D.leader, D.sub_leader)
+def delete_tasks_view(user_id: str) -> Response:
+    """批量删除任务路由"""
+    try:
+        data = request.get_json()
+        if not data or 'task_ids' not in data:
+            return jsonify({
+                "status": "ERR_INVALID_ARGUMENT",
+                "msg": "Missing task_ids in request body",
+                "data": None
+            }), 400
+            
+        task_ids = data['task_ids']
+        if not isinstance(task_ids, list):
+            return jsonify({
+                "status": "ERR_INVALID_ARGUMENT",
+                "msg": "task_ids must be a list",
+                "data": None
+            }), 400
+
+        res = delete_tasks(user_id, task_ids)
+        
+        return jsonify({
+            "status": res.status,
+            "msg": "批量删除完成" if res.status == "OK" else res.message,
+            "data": res.data
+        })
+
+    except Exception as e:
+        print(f"Error in batch_delete_tasks_view: {str(e)}")
+        return jsonify({
+            "status": "ERR_INTERNAL",
+            "msg": str(e),
+            "data": None
+        }), 500
+
+@task_bp.route("/complete_task/<task_id>", methods=["POST"])
+@require_role(D.admin, D.leader, D.sub_leader, D.member)  # 允许普通成员完成任务
+def complete_task_view(user_id: str, task_id: str):
+    """完成任务路由"""
+    try:
+        res = complete_task(user_id, task_id)
+        
+        return jsonify({
+            "status": res.status,
+            "msg": "任务完成成功" if res.status == "OK" else res.message,
+            "data": res.data
+        })
+
+    except Exception as e:
+        print(f"Error in complete_task_view: {str(e)}")
+        return jsonify({
+            "status": "ERR_INTERNAL",
+            "msg": str(e),
+            "data": None
+        }), 500

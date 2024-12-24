@@ -100,7 +100,7 @@ class Timer:
         """将js格式的时间转为datetime\n
         **js_datetime**: Tue Oct 15 2024 13:13:34 GMT+0800 (Taipei Standard Time)
         """
-        local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z (%Z)")
+        local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z")
         utc_date = local_date.astimezone(pytz.utc)
 
         return utc_date
@@ -109,3 +109,17 @@ class Timer:
     def utc_now() -> datetime:
         """生成现在的utc时间"""
         return datetime.now(timezone.utc)
+    
+    @staticmethod
+    def js_to_utc(js_datetime: str) -> datetime:
+        """将js格式的时间转为datetime\n
+        **js_datetime**: Tue Oct 15 2024 13:13:34 GMT+0800 (Taipei Standard Time)
+        """
+        if isinstance(js_datetime, datetime):  # 如果是 datetime 对象，直接返回
+            return js_datetime.astimezone(pytz.utc)
+
+        # 如果是字符串格式，使用 strptime 解析
+        local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z")
+        utc_date = local_date.astimezone(pytz.utc)
+
+        return utc_date

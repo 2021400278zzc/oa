@@ -90,6 +90,21 @@ def create_completion(
     return reply
 
 
+# def openai_image(image_paths: list[str]) -> list:
+#     """通过图片路径打开图片，并转为openaiAPI支持的格式"""
+#     images = []
+#     template = {"type": "image_url", "image_url": {}}
+
+#     for image_path in image_paths:
+#         try:
+#             with open(image_path, "rb") as image:
+#                 image_dict = template.copy()
+#                 image_dict["image_url"] = {"url": b64encode(image.read())}
+#                 images.append(image_dict)
+#         except Exception as e:
+#             Log.error(e)
+
+#     return images
 def openai_image(image_paths: list[str]) -> list:
     """通过图片路径打开图片，并转为openaiAPI支持的格式"""
     images = []
@@ -99,9 +114,13 @@ def openai_image(image_paths: list[str]) -> list:
         try:
             with open(image_path, "rb") as image:
                 image_dict = template.copy()
-                image_dict["image_url"] = {"url": b64encode(image.read())}
+                # 将 bytes 转换为 string
+                base64_image = b64encode(image.read()).decode('utf-8')
+                image_dict["image_url"] = {
+                    "url": f"data:image/png;base64,{base64_image}"
+                }
                 images.append(image_dict)
         except Exception as e:
-            Log.error(e)
+            Log.error(f"Error processing image {image_path}: {str(e)}")
 
     return images
