@@ -138,6 +138,43 @@ class UrlTemplate:
 class LLMPrompt:
     """在该类下的每个常量均基于TemplateString生成的"""
 
+    TASK_PROGRESS_ANALYSIS = TemplateString(
+       """
+分析以下周期任务的学习进度，并严格按照指定的JSON格式返回结果：
+
+周期任务要求：
+%s
+
+最新的学习完成情况：
+%s
+
+之前的学习记录：
+%s
+
+分析要求：
+1. 将周期任务要求分解为清晰的学习阶段
+2. 根据学习记录准确判断当前进度
+3. 计算整体完成度（0-100的整数）
+
+注意：必须严格按照以下JSON格式返回，不要添加任何额外的说明文字：
+{
+   "progress": 100,
+}
+
+JSON格式说明：
+- total_stages: 字符串，表示总阶段数
+- current_stage: 字符串，表示当前阶段
+- progress: 整数，范围0-100，代表完成百分比
+- completed_content: 字符串，已完成内容的详细描述
+- remaining_content: 字符串，未完成内容的详细描述
+
+分析规则：
+1. 如果学习进度超前完成了所有阶段，progress应为100
+2. 如果在某个阶段中途，progress应为 ((当前阶段)/总阶段数 * 100) + (当前阶段完成度/100 * (100/总阶段数))
+3. 阶段数最少1个，最多10个
+"""
+   )
+
     DAILY_REPORT_REVIEW_JSON = TemplateString(
         """
 用户学习或任务情况总结：

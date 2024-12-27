@@ -32,15 +32,36 @@ class DateRangeSchema(Schema):
     start_date = fields.String(required=True)
     end_date = fields.String(required=True)
 
-@daily_task_bp.route("/generate_from_period/<period_task_id>", methods=["POST"])
-@require_role(D.admin, D.leader, D.sub_leader)
+@daily_task_bp.route("/generate_from_period/<period_task_id>", methods=["POST"]) 
+@require_role(D.admin, D.leader, D.sub_leader) 
 def generate_daily_task_view(user_id: str, period_task_id: str) -> Response:
-    """根据周期任务生成每日任务"""
-    try:
-        res = generate_daily_task_from_period(period_task_id, user_id)
-        return res.response()
-    except Exception as e:
-        return Response(Response.r.ERR_INTERNAL, message=str(e)).response()
+   """根据周期任务生成每日任务"""
+   try:
+       # 先检查今天是否已经有任务
+       today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+       tomorrow = today + timedelta(days=1)
+       
+       existing_task = DailyTask.query.filter(
+           DailyTask.period_task_id == period_task_id,
+           DailyTask.task_date >= today,
+           DailyTask.task_date < tomorrow
+       ).first()
+
+       if existing_task:
+           # 如果已有任务，直接返回该任务
+           return Response(Response.r.OK, data={
+               "task_id": existing_task.task_id,
+            #    "basic_task": existing_task.basic_task_requirements,
+            #    "detail_task": existing_task.detail_task_requirements,
+               "is_continued": "[续]" in existing_task.basic_task_requirements
+           }).response()
+       
+       # 如果没有任务，生成新任务
+       res = generate_daily_task_from_period(period_task_id, user_id)
+       return res.response()
+
+   except Exception as e:
+       return Response(Response.r.ERR_INTERNAL, message=str(e)).response()
 
 @daily_task_bp.route("/get_tasks", methods=["GET"])
 @require_role()
@@ -177,7 +198,6 @@ def get_tasks_range_view(user_id: str) -> Response:
 @daily_task_bp.route("/get_task_history", methods=["GET"])
 @require_role()
 def get_task_history_view(user_id: str) -> Response:
-    """获取周期任务下的所有每日任务列表"""
     try:
         # 获取参数
         period_task_id = request.args.get("period_task_id")
@@ -210,9 +230,7 @@ def get_task_history_view(user_id: str) -> Response:
         if not daily_tasks:
             return Response(Response.r.ERR_NOT_FOUND, message="未找到相关任务").response()
         
-        tasks_info = []
-        completed_count = 0
-        uncompleted_count = 0
+        completed_dates = []
         
         for task in daily_tasks:
             # 获取当天是否有日报
@@ -225,35 +243,11 @@ def get_task_history_view(user_id: str) -> Response:
                 DailyReport.created_at < day_end
             ).first()
             
-            task_info = {
-                "task_id": task.task_id,
-                "task_date": task.task_date.isoformat(),
-                # "basic_task": task.basic_task_requirements,
-                # "detail_task": task.detail_task_requirements,
-                "completed": bool(has_report),
-                "status": "已完成" if has_report else "未完成",
-                # "completed_description": task.completed_task_description,
-                # "created_at": task.created_at.isoformat(),
-                # "updated_at": task.updated_at.isoformat() if task.updated_at else None
-            }
-            
-            tasks_info.append(task_info)
-            
+            # 只添加已完成的任务日期到返回列表
             if has_report:
-                completed_count += 1
-            else:
-                uncompleted_count += 1
+                completed_dates.append(task.task_date.strftime('%Y-%m-%d'))
         
-        return Response(Response.r.OK, data={
-            "total_tasks": len(tasks_info),
-            "completed_tasks": completed_count,
-            "uncompleted_tasks": uncompleted_count,
-            "tasks": tasks_info,
-            "date_range": {
-                "start": start_date,
-                "end": end_date
-            } if start_date or end_date else None
-        }).response()
+        return Response(Response.r.OK, data=completed_dates).response()
         
     except Exception as e:
         return Response(Response.r.ERR_INTERNAL, message=str(e)).response()

@@ -92,14 +92,27 @@ def generate_daily_task_from_period(period_task_id: str, assigner_id: str) -> Re
            # 如果前一天任务已完成或没有前一天任务，生成新任务
            # 构建GPT提示
            prompt = f"""
-分析以下周期任务信息并生成今日任务计划：
+分析周期任务信息并根据前一天的完成情况生成今日任务计划：
 
-当前周期任务详细要求：
+周期任务详细要求：
 {period_task.detail_task_requirements}
+
+前一天任务完成情况：
+{"暂无前一天任务" if not previous_status["has_task"] else f'''
+任务内容：{previous_status["task_content"]["detail"]}
+完成状态：{"已完成" if previous_status["completed"] else "未完成"}
+完成报告：{previous_status["report_content"] if previous_status["report_content"] else "无"}
+'''}
+
+请根据以上信息生成今日任务计划，要求：
+1. 任务内容要基于前一天的学习进度和完成情况
+2. 确保任务连贯性，新任务应该是前一天任务的自然延续
+3. 任务难度要循序渐进
+4. 任务内容要符合周期任务的整体目标
 
 请生成：
 1. 今日任务概要（一句话总结）
-2. 详细的任务步骤和要求
+2. 详细的任务步骤和要求（包括具体的学习内容和预期完成标准）
 """
            # 使用GPT生成任务内容
            task_content = create_completion(prompt, assigner_id, "task")
@@ -131,8 +144,8 @@ def generate_daily_task_from_period(period_task_id: str, assigner_id: str) -> Re
        
        return Response(Response.r.OK, data={
            "task_id": daily_task.task_id,
-           "basic_task": basic_task,
-           "detail_task": detail_task,
+        #    "basic_task": basic_task,
+        #    "detail_task": detail_task,
            "is_continued": is_continued
        })
        

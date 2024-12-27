@@ -1,11 +1,21 @@
 from datetime import datetime, timedelta
+from app.controllers.daily_task import generate_daily_task_from_period  # 添加这行导入
+from app.models.period_task import PeriodTask
+from app.models.daily_task import DailyTask
+from app.models.daily_report import DailyReport
+from app.utils.response import Response
+from app.utils.logger import Log
+from datetime import datetime, timedelta
 from flask import Blueprint, request
 from marshmallow import Schema, ValidationError, fields
 from app.controllers.daily_report_handler import DailyReportHandler
+from app.controllers.daily_task import generate_daily_task_from_period
 from app.controllers.report import create_report
 from app.models.daily_report import DailyReport
 from app.models.daily_task import DailyTask
+from app.models.period_task import PeriodTask
 from app.utils.auth import require_role
+from app.utils.logger import Log
 from app.utils.response import Response
 
 daily_report_bp = Blueprint("daily_report", __name__, url_prefix="/daily")
@@ -86,54 +96,53 @@ def create_report_view(user_id: str) -> Response:
 @daily_report_bp.route("/get_today_report", methods=["GET"])
 @require_role()
 def get_today_report_view(user_id: str) -> Response:
-    """获取今日日报"""
-    try:
-        handler = DailyReportHandler(user_id)
-        today = datetime.now()
-        
-        # 获取今日任务
-        tasks_info = get_tasks_for_date(user_id, today)
-        
-        # 直接查询今日任务的 detail_task_requirements
-        day_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_end = day_start + timedelta(days=1)
-        
-        # 查询任务的 detail_task_requirements
-        task = DailyTask.query.filter(
-            DailyTask.assignee_id == user_id,
-            DailyTask.task_date >= day_start,
-            DailyTask.task_date < day_end
-        ).first()
+   """获取今日日报"""
+   try:
+       handler = DailyReportHandler(user_id)
+       today = datetime.now()
+       
+       # 获取今日任务
+       tasks_info = get_tasks_for_date(user_id, today)
+       
+       day_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
+       day_end = day_start + timedelta(days=1)
 
-        # 查询今日日报
-        report = DailyReport.query.filter(
-            DailyReport.user_id == user_id,
-            DailyReport.created_at >= day_start,
-            DailyReport.created_at < day_end
-        ).first()
-        
-        return Response(Response.r.OK, data={
-            "has_report": bool(report),
-            "report_info": {
-                "detail_task_requirements": task.detail_task_requirements if task else "",
-                "report_id": report.report_id,
-                "report_text": report.report_text,
-                "report_picture": report.report_picture or [],
-                "report_review": report.report_review if not report.generating else None,
-                "basic_score": report.basic_score,
-                "excess_score": report.excess_score,
-                "extra_score": report.extra_score,
-                "generating": report.generating,
-                "created_at": report.created_at.isoformat()
-            } if report else None,
-            "total_tasks": len(tasks_info),
-            "tasks": tasks_info,
-            "date": today.strftime('%Y-%m-%d'),
-            
-        }).response()
-            
-    except Exception as e:
-        return Response(Response.r.ERR_INTERNAL, message=str(e)).response()
+       # 查询任务的 detail_task_requirements
+       task = DailyTask.query.filter(
+           DailyTask.assignee_id == user_id,
+           DailyTask.task_date >= day_start,
+           DailyTask.task_date < day_end
+       ).first()
+
+       # 查询今日日报
+       report = DailyReport.query.filter(
+           DailyReport.user_id == user_id,
+           DailyReport.created_at >= day_start,
+           DailyReport.created_at < day_end
+       ).first()
+
+       return Response(Response.r.OK, data={
+           "has_report": bool(report),
+           "report_info": {
+               "detail_task_requirements": task.detail_task_requirements if task else "",
+               "report_id": report.report_id,
+               "report_text": report.report_text,
+               "report_picture": report.report_picture or [],
+               "report_review": report.report_review if not report.generating else None,
+               "basic_score": report.basic_score,
+               "excess_score": report.excess_score,
+               "extra_score": report.extra_score,
+               "generating": report.generating,
+               "created_at": report.created_at.isoformat()
+           } if report else None,
+           "total_tasks": len(tasks_info),
+           "tasks": tasks_info,
+           "date": today.strftime('%Y-%m-%d'),
+       }).response()
+
+   except Exception as e:
+       Log.error(f"Error in get_today_report: {str(e)}")
+       return Response(Response.r.ERR_INTERNAL, message=str(e)).response()
 
 @daily_report_bp.route("/get_report_history", methods=["GET"])
 @require_role()

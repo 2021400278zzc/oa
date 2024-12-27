@@ -40,6 +40,12 @@ class DeleteTasksSchema(Schema):
     """批量删除任务的验证Schema"""
     task_ids = fields.List(fields.String(), required=True)
 
+@task_bp.route("/period_task/<period_task_id>/progress", methods=["GET"])
+@require_role(D.admin, D.leader, D.sub_leader)
+def get_task_progress_view(user_id: str, period_task_id: str) -> Response:
+   """获取周期任务进度"""
+   return calculate_task_progress(period_task_id).response()
+
 @task_bp.route("/get_assignee_list", methods=["GET"])  
 @require_role(D.admin, D.leader, D.sub_leader)  
 def get_assignee_list_view(user_id: str):
@@ -173,7 +179,8 @@ def get_period_tasks_view(user_id: str):
 def get_found_period_tasks_view():
     """获取周期任务列表路由"""
     # 从请求头获取成员ID
-    member_id = request.headers.get('Session-Id')
+    member_id = request.args.get('Session-Id')
+    print(member_id)
     if not member_id:
         return jsonify({
             "status": "ERR.INVALID_ARGUMENT",
@@ -181,7 +188,7 @@ def get_found_period_tasks_view():
             "data": None
         }), 400
     
-    return get_period_tasks(member_id)
+    return get_period_tasks(member_id)      
 
 # TODO
 @task_bp.route("/modify_task", methods=["POST"])
@@ -279,3 +286,10 @@ def complete_task_view(user_id: str, task_id: str):
             "msg": str(e),
             "data": None
         }), 500
+
+@task_bp.route("/members_period_tasks", methods=["GET"])
+@require_role(D.admin, D.leader, D.sub_leader)
+def get_members_period_tasks_view(user_id: str):
+    """获取权限范围内所有成员的周期任务列表路由"""
+    return get_members_period_tasks(user_id)
+

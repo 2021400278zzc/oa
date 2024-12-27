@@ -4,6 +4,7 @@ from typing import List
 import uuid
 from datetime import datetime
 from sqlalchemy import func
+from app.models.daily_report import DailyReport
 from app.modules.sql import db
 from flask import jsonify
 from app.models.member import Member
@@ -15,6 +16,68 @@ from app.utils.logger import Log
 from app.utils.response import Response
 from app.utils.utils import Timer
 from app.utils.constant import DataStructure as D
+from app.models.department import Department
+
+@Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
+def calculate_task_progress(period_task_id: str) -> Response:
+   """
+   计算周期任务的学习进度
+   Args:
+       period_task_id (str): 周期任务ID
+   Returns:
+       Response: 包含进度信息的响应
+   """
+   try:
+       # 获取周期任务
+       period_task = PeriodTask.query.filter_by(task_id=period_task_id).first()
+       if not period_task:
+           return Response(Response.r.ERR_NOT_FOUND, message="找不到指定的周期任务")
+
+       # 获取所有相关日报
+       daily_reports = DailyReport.query.filter(
+           DailyReport.user_id == period_task.assignee_id,  # 使用用户ID关联
+           DailyReport.created_at >= period_task.start_time,
+           DailyReport.created_at <= period_task.end_time
+       ).order_by(DailyReport.created_at.asc()).all()
+
+       if not daily_reports:
+           return Response(Response.r.OK, data={
+               "total_stages": "未开始",
+               "current_stage": "未开始",
+               "progress": 0,
+               "completed_content": "尚未开始任务",
+               "remaining_content": period_task.detail_task_requirements
+           })
+
+       # 获取最近的日报用于分���当前进度
+       latest_report = daily_reports[-1]
+
+       # 构建分析提示
+       prompt = LLM.TASK_PROGRESS_ANALYSIS(
+           period_task.detail_task_requirements,
+           latest_report.report_text if latest_report else "",
+           '\n'.join(f"- {report.report_text}" for report in daily_reports[:-1]) if len(daily_reports) > 1 else "无历史记录"
+       )
+
+       # 使用GPT分析进度
+       progress_analysis = create_completion(
+    send_text=prompt,
+    user_id=period_task.assigner_id,
+    method="task",
+    model_type="gpt4",  # 使用 GPT-4
+    dictionary_like=True,
+    temperature=0.3,    # 降低随机性
+    max_tokens=1000,    # 设置最大token数
+    presence_penalty=0,
+    frequency_penalty=0,
+    top_p=1
+)
+
+       return Response(Response.r.OK, data=progress_analysis)
+
+   except Exception as e:
+       Log.error(f"Error calculating task progress: {str(e)}")
+       return Response(Response.r.ERR_INTERNAL, message=str(e))
 
 def get_task(assignee_id: str, date: datetime.date):
     """根据 assignee_id 和日期查找当天所有任务详情"""
@@ -144,7 +207,7 @@ def modify_task(
         # 返回内部错误响应
         return {"status": "error", "message": "False"}
 
-    return {"status": "success", "message": "Ture"}
+    return {"data":{"task_id":task_id},"status": "OK", "message": "Ture"}
 
 @Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
 def generate_task(
@@ -317,41 +380,66 @@ def get_period_tasks_list(user_id: str):
     Args:
         user_id (str): 用户ID
     Returns:
-        Response: 周期任务列表，按开始时间倒序排列
+        Response: 周期任务列表，按开始时间倒序排列，包含进度信息
     """
     try:
-        # 打印用户ID，用于调试
-        # print(f"Querying tasks for user_id: {user_id}")
-        
-        # 查询并打印查询到的任务数量
         period_tasks = (PeriodTask.query
             .filter(PeriodTask.assignee_id == user_id)
             .order_by(PeriodTask.start_time.desc())
             .all())
         
-        # print(f"Found {len(period_tasks)} tasks")
-        
         now = datetime.now()
         tasks_list = []
         
         for task in period_tasks:
-            print(f"Processing task: {task.task_id}")  # 调试日志
-            
             if now < task.start_time:
                 status = "未开始"
+                progress_data = {
+                    # "total_stages": "未开始",
+                    "current_stage": "未开始",
+                    "progress": 0,
+                    # "completed_content": "尚未开始任务",
+                    # "remaining_content": task.detail_task_requirements
+                    "basic_task_requirements": task.basic_task_requirements,
+                }
             elif now > task.end_time:
                 status = "已结束"
+                progress_data = {
+                    # "total_stages": "已完成",
+                    # "current_stage": "已完成",
+                    "progress": 100,
+                    # "completed_content": task.detail_task_requirements,
+                    # "remaining_content": "任务已完成"
+                    "basic_task_requirements": task.basic_task_requirements,
+                }
             else:
                 status = "进行中"
+                # try:
+                #     # 尝试获取GPT分析的进度
+                #     progress_response = calculate_task_progress(task.task_id)
+                #     progress_data = progress_response.data
+                # except Exception as e:
+                    # 如果GPT调用失败，提供一个基于时间的预估进度
+                total_duration = (task.end_time - task.start_time).total_seconds()
+                elapsed_duration = (now - task.start_time).total_seconds()
+                estimated_progress = min(int((elapsed_duration / total_duration) * 100), 99)
+                    
+                progress_data = {
+                        # "total_stages": "进行中",
+                        # "current_stage": "进行中",
+                        "progress": estimated_progress,
+                        # "completed_content": "任务进行中（系统繁忙，显示预估进度）",
+                        # "remaining_content": "请稍后再试"
+                        "basic_task_requirements": task.basic_task_requirements,
+                    }
                 
             tasks_list.append({
                 "task_id": task.task_id,
                 "start_time": task.start_time.strftime("%Y-%m-%d %H:%M:%S"),
                 "end_time": task.end_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "status": status
+                "status": status,
+                "progress": progress_data
             })
-        
-        # print(f"Processed {len(tasks_list)} tasks")  # 调试日志
 
         return jsonify({
             "status": "OK",
@@ -369,7 +457,7 @@ def get_period_tasks_list(user_id: str):
 
 @Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
 def get_period_tasks(member_id: str):
-    """获取成员的当前和未来周期任务列表
+    """获取成员的当前和未来���期任务列表
     Args:
         member_id (str): 成员ID（学号）
     Returns:
@@ -399,9 +487,21 @@ def get_period_tasks(member_id: str):
         for task in period_tasks:
             # 判断任务状态
             if now < task.start_time:
-                status = "pending"  # 未开始
+                status = "未开始"  # 未开始
+                progress_data = 0
             else:
-                status = "ongoing"  # 进行中
+                status = "进行中"  # 进行中
+                # try:
+                #     # 尝试获取GPT分析的进度
+                #     progress_response = calculate_task_progress(task.task_id)
+                #     progress_data = progress_response.data
+                # except Exception as e:
+                    # 如果GPT调用失败，提供一个基于时间的预估进度
+                total_duration = (task.end_time - task.start_time).total_seconds()
+                elapsed_duration = (now - task.start_time).total_seconds()
+                estimated_progress = min(int((elapsed_duration / total_duration) * 100), 99)
+                
+                progress_data = estimated_progress,
                 
             tasks_list.append({
                 "task_id": task.task_id,
@@ -409,7 +509,8 @@ def get_period_tasks(member_id: str):
                 "end_time": task.end_time.strftime("%Y-%m-%d %H:%M:%S"),
                 "basic_task_requirements": task.basic_task_requirements,
                 "detail_task_requirements": task.detail_task_requirements,
-                # "status": status
+                "status": status,
+                "progress": progress_data
             })
 
         return jsonify({
@@ -422,6 +523,89 @@ def get_period_tasks(member_id: str):
         Log.error(f"Error in get_period_tasks_list: {str(e)}")
         return jsonify({
             "status": "ERR.INTERNAL",
+            "msg": str(e),
+            "data": None
+        }), 500
+    
+def get_members_period_tasks(user_id: str):
+    """获取权限范围内所有成员的周期任务列表"""
+    try:
+        now = datetime.now()
+        current_user = Member.query.get(user_id)
+        
+        if not current_user:
+            return jsonify({
+                "status": "ERR_NOT_FOUND",
+                "msg": "用户不存在",
+                "data": None
+            }), 404
+
+        # 获取可见成员列表
+        if current_user.role.value == "admin":
+            members = Member.query.all()
+        elif current_user.role.value == "leader":
+            dev_dept_ids = (Department.query
+                          .filter(Department.name.in_(["开发组-前端", "开发组-后端", "开发组-游戏开发", "开发组-OA开发"]))
+                          .with_entities(Department.id)
+                          .all())
+            dev_dept_id_list = [d[0] for d in dev_dept_ids]
+            members = Member.query.filter(Member.department_id.in_(dev_dept_id_list)).all()
+        elif current_user.role.value == "subleader":
+            members = Member.query.filter(Member.department_id == current_user.department_id).all()
+        else:
+            return jsonify({
+                "status": "ERR_FORBIDDEN",
+                "msg": "没有权限访问",
+                "data": None
+            }), 403
+
+        result = []
+        for member in members:
+            # 查询该成员的未结束周期任务
+            period_tasks = (PeriodTask.query
+                          .filter(
+                              PeriodTask.assignee_id == member.id,
+                              PeriodTask.end_time >= now
+                          )
+                          .order_by(PeriodTask.start_time.desc())
+                          .all())
+            
+            for task in period_tasks:
+                # 计算任务进度
+                if now < task.start_time:
+                    status = "未开始"
+                    progress = 0
+                elif now > task.start_time and now < task.end_time:
+                    status = "进行中"
+                    total_duration = (task.end_time - task.start_time).total_seconds()
+                    elapsed_duration = (now - task.start_time).total_seconds()
+                    progress = min(int((elapsed_duration / total_duration) * 100), 99)
+                else:
+                    status = "已结束"
+                    progress = 100
+
+                result.append({
+                    "member_id": member.id,
+                    "name": member.name,
+                    "major": member.major,
+                    "task_id": task.task_id,
+                    "basic_task_requirements": task.basic_task_requirements,
+                    "start_time": task.start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "end_time": task.end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "status": status,
+                    "progress": progress
+                })
+
+        return jsonify({
+            "status": "OK",
+            "msg": "success",
+            "data": result
+        })
+
+    except Exception as e:
+        print(f"Error in get_members_period_tasks: {str(e)}")
+        return jsonify({
+            "status": "ERR_INTERNAL",
             "msg": str(e),
             "data": None
         }), 500

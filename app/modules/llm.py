@@ -42,6 +42,7 @@ def create_completion(
         if not send_images:
             send_images = []
         model = "gpt-4o-2024-08-06" if model_type == "4o" else "gpt-4"
+        
 
         chat_call: Callable = (
             client.beta.chat.completions.parse
