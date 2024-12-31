@@ -438,6 +438,7 @@ def get_period_tasks_list(user_id: str):
                 "start_time": task.start_time.strftime("%Y-%m-%d %H:%M:%S"),
                 "end_time": task.end_time.strftime("%Y-%m-%d %H:%M:%S"),
                 "status": status,
+                "completed_task_description": task.completed_task_description,
                 "progress": progress_data
             })
 
@@ -456,7 +457,7 @@ def get_period_tasks_list(user_id: str):
         }), 500
 
 @Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
-def get_period_tasks(member_id: str):
+def get_period_tasks(member_id: str, task_id: str = None):
     """获取成员的当前和未来���期任务列表
     Args:
         member_id (str): 成员ID（学号）
@@ -466,15 +467,22 @@ def get_period_tasks(member_id: str):
     try:
         # 获取当前时间
         now = datetime.now()
-        
-        # 查询未结束的周期任务（进行中或未开始）
-        period_tasks = (PeriodTask.query
+        if task_id:
+            period_tasks = (PeriodTask.query
             .filter(
                 PeriodTask.assignee_id == member_id,
-                PeriodTask.end_time >= now  # 只获取未结束的任务
+                PeriodTask.task_id == task_id
             )
-            .order_by(PeriodTask.start_time.desc())
             .all())
+        else:
+            # 查询未结束的周期任务（进行中或未开始）
+            period_tasks = (PeriodTask.query
+                .filter(
+                    PeriodTask.assignee_id == member_id,
+                    PeriodTask.end_time >= now  # 只获取未结束的任务
+                )
+                .order_by(PeriodTask.start_time.desc())
+                .all())
 
         if not period_tasks:
             return jsonify({
@@ -489,7 +497,7 @@ def get_period_tasks(member_id: str):
             if now < task.start_time:
                 status = "未开始"  # 未开始
                 progress_data = 0
-            else:
+            elif task.start_time <= now and task.end_time >= now:
                 status = "进行中"  # 进行中
                 # try:
                 #     # 尝试获取GPT分析的进度
@@ -502,6 +510,9 @@ def get_period_tasks(member_id: str):
                 estimated_progress = min(int((elapsed_duration / total_duration) * 100), 99)
                 
                 progress_data = estimated_progress,
+            else:
+                status = "已结束"  # 已结束
+                progress_data = 100
                 
             tasks_list.append({
                 "task_id": task.task_id,
@@ -509,6 +520,7 @@ def get_period_tasks(member_id: str):
                 "end_time": task.end_time.strftime("%Y-%m-%d %H:%M:%S"),
                 "basic_task_requirements": task.basic_task_requirements,
                 "detail_task_requirements": task.detail_task_requirements,
+                "completed_task_description": task.completed_task_description,
                 "status": status,
                 "progress": progress_data
             })

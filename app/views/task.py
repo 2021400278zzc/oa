@@ -10,6 +10,7 @@ from app.controllers.task import *
 from app.utils.auth import require_role
 from app.utils.constant import DataStructure as D
 from app.utils.response import Response
+import logging
 
 task_bp = Blueprint("task", __name__, url_prefix="/task")
 
@@ -102,6 +103,66 @@ def get_assignee_list_view(user_id: str):
            "msg": str(e)
        }), 500
 
+@task_bp.route("/assign_tasks", methods=["GET"])  
+@require_role(D.admin, D.leader, D.sub_leader)  
+def assign_tasks_view(user_id: str):
+   """获取当前用户权限可见的成员列表"""
+   try:
+       # 获取当前用户信息
+       current_user = Member.query.get(user_id)
+       if not current_user:
+           return jsonify({
+               "status": "OK",
+               "data": []
+           })
+
+       # 根据角色获取可见成员列表
+       if current_user.role.value == "admin":
+           # 管理员只能看到自己部门的成员
+           dept_id = current_user.department_id
+           member_ids = (db.session.query(Member.id)
+                       .filter(Member.department_id == dept_id)
+                       .distinct()
+                       .all())
+
+       elif current_user.role.value == "leader":
+           # leader可以看到三个开发组的成员
+           dev_dept_ids = (Department.query
+                         .filter(Department.name.in_(["开发组-前端", "开发组-后端", "开发组-游戏开发","开发组-OA开发"]))
+                         .with_entities(Department.id)
+                         .all())
+           # 将查询结果转换为ID列表
+           dev_dept_id_list = [d[0] for d in dev_dept_ids]
+           member_ids = (db.session.query(Member.id)
+                       .filter(Member.department_id.in_(dev_dept_id_list))
+                       .distinct()
+                       .all())
+
+       elif current_user.role.value == "subleader":  # sub_leader
+           # sub_leader只能看到自己部门
+           dept_id = current_user.department_id
+           member_ids = (db.session.query(Member.id)
+                       .filter(Member.department_id == dept_id)
+                       .distinct()
+                       .all())
+
+       # 提取成员ID并构建返回数据
+       assignee_list = [member_id[0] for member_id in member_ids]
+       logging.info(f"User role: {current_user.role.value}, Department ID: {current_user.department_id}, User ID: {user_id}, Assignee list: {assignee_list}")
+
+       return jsonify({
+           "status": "OK",
+           "data": assignee_list
+       })
+
+   except Exception as e:
+       import traceback
+       print(traceback.format_exc())
+       return jsonify({
+           "status": "ERR_INTERNAL",
+           "msg": str(e)
+       }), 500
+
 @task_bp.route("/get_task", methods=["GET"])
 @require_role(D.admin, D.leader, D.sub_leader)
 def get_task_view():
@@ -142,8 +203,6 @@ def get_task_view():
             "data": None
         }), 500
 
-
-
 @task_bp.route("/create_task", methods=["POST"])
 @require_role(D.admin, D.leader, D.sub_leader)
 def create_task_view(user_id: str) -> Response:
@@ -178,9 +237,9 @@ def get_period_tasks_view(user_id: str):
 @require_role(D.admin, D.leader, D.sub_leader)
 def get_found_period_tasks_view():
     """获取周期任务列表路由"""
-    # 从请求头获取成员ID
     member_id = request.args.get('Session-Id')
-    print(member_id)
+    task_id = request.args.get('task_id')
+    
     if not member_id:
         return jsonify({
             "status": "ERR.INVALID_ARGUMENT",
@@ -188,7 +247,7 @@ def get_found_period_tasks_view():
             "data": None
         }), 400
     
-    return get_period_tasks(member_id)      
+    return get_period_tasks(member_id, task_id)
 
 # TODO
 @task_bp.route("/modify_task", methods=["POST"])

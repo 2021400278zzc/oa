@@ -177,6 +177,25 @@ def get_report_history_view(user_id: str) -> Response:
             DailyReport.created_at < day_end
         ).first()
         
+        # 获取前5天的日报总分
+        previous_scores = []
+        for i in range(0, 5):
+            previous_date = day_start - timedelta(days=i)
+            previous_end = previous_date + timedelta(days=1)
+            
+            prev_report = DailyReport.query.filter(
+                DailyReport.user_id == target_user_id,
+                DailyReport.created_at >= previous_date,
+                DailyReport.created_at < previous_end
+            ).first()
+            
+            if prev_report:
+                total_score = prev_report.basic_score + prev_report.excess_score + prev_report.extra_score
+                previous_scores.append({
+                    "date": previous_date.strftime('%Y-%m-%d'),
+                    "total_score": total_score
+                })
+
         return Response(Response.r.OK, data={
             "date": query_date.strftime('%Y-%m-%d'),
             "has_report": bool(report),
@@ -192,7 +211,8 @@ def get_report_history_view(user_id: str) -> Response:
                 "created_at": report.created_at.isoformat()
             } if report else None,
             "total_tasks": len(tasks_info),
-            "tasks": tasks_info if tasks_info else []  # 如果没有任务返回空列表
+            "tasks": tasks_info if tasks_info else [],
+            "previous_scores": previous_scores  # 添加前5天的总分数据
         }).response()
         
     except Exception as e:

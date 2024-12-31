@@ -70,7 +70,8 @@ def query_openai(messages):
     
     api_urls = [
         # 'https://api-gpt.zzc1314.us.kg/v1/chat/completions',
-        'https://api.openai-proxy.com/v1/chat/completions'
+        'https://api.openai-proxy.com/v1/chat/completions',
+        'https://api.openai.com/v1/chat/completions'
     ]
     
     for url in api_urls:

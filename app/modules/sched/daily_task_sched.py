@@ -120,7 +120,7 @@ class PeriodTaskScheduler:
             logging.info(f"开始检查到期周期任务，当前时间: {now}")
 
             expiring_tasks = PeriodTask.query.filter(
-                func.date(PeriodTask.end_time) == today
+                func.date(PeriodTask.end_time) <= today
             ).all()
 
             logging.info(f"今日有 {len(expiring_tasks)} 个周期任务到期")
