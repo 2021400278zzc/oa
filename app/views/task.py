@@ -63,31 +63,30 @@ def get_assignee_list_view(user_id: str):
        # 根据角色获取可见成员列表
        if current_user.role.value == "admin":
            # 管理员可见所有成员
-           member_ids = db.session.query(Member.id).distinct().all()
+           members = db.session.query(Member.id, Member.name).distinct().all()
 
        elif current_user.role.value == "leader":
-           # leader可以看到三个开发组的成员
+           # leader可以看到开发组的成员
            dev_dept_ids = (Department.query
                          .filter(Department.name.in_(["开发组-前端", "开发组-后端", "开发组-游戏开发","开发组-OA开发"]))
                          .with_entities(Department.id)
                          .all())
-           # 将查询结果转换为ID列表
            dev_dept_id_list = [d[0] for d in dev_dept_ids]
-           member_ids = (db.session.query(Member.id)
+           members = (db.session.query(Member.id, Member.name)
                        .filter(Member.department_id.in_(dev_dept_id_list))
                        .distinct()
                        .all())
 
-       elif current_user.role.value == "subleader":  # sub_leader
+       elif current_user.role.value == "subleader":
            # sub_leader只能看到自己部门
            dept_id = current_user.department_id
-           member_ids = (db.session.query(Member.id)
+           members = (db.session.query(Member.id, Member.name)
                        .filter(Member.department_id == dept_id)
                        .distinct()
                        .all())
 
-       # 提取成员ID并构建返回数据
-       assignee_list = [member_id[0] for member_id in member_ids]
+       # 构建包含id和name的返回数据
+       assignee_list = [{"id": member[0], "name": member[1]} for member in members]
        print(f"User role: {current_user.role.value}, User ID: {user_id}, Assignee list: {assignee_list}")  
 
        return jsonify({
@@ -120,20 +119,19 @@ def assign_tasks_view(user_id: str):
        if current_user.role.value == "admin":
            # 管理员只能看到自己部门的成员
            dept_id = current_user.department_id
-           member_ids = (db.session.query(Member.id)
+           members = (db.session.query(Member.id, Member.name)
                        .filter(Member.department_id == dept_id)
                        .distinct()
                        .all())
 
        elif current_user.role.value == "leader":
-           # leader可以看到三个开发组的成员
+           # leader可以看到开发组的成员
            dev_dept_ids = (Department.query
                          .filter(Department.name.in_(["开发组-前端", "开发组-后端", "开发组-游戏开发","开发组-OA开发"]))
                          .with_entities(Department.id)
                          .all())
-           # 将查询结果转换为ID列表
            dev_dept_id_list = [d[0] for d in dev_dept_ids]
-           member_ids = (db.session.query(Member.id)
+           members = (db.session.query(Member.id, Member.name)
                        .filter(Member.department_id.in_(dev_dept_id_list))
                        .distinct()
                        .all())
@@ -141,13 +139,13 @@ def assign_tasks_view(user_id: str):
        elif current_user.role.value == "subleader":  # sub_leader
            # sub_leader只能看到自己部门
            dept_id = current_user.department_id
-           member_ids = (db.session.query(Member.id)
+           members = (db.session.query(Member.id, Member.name)
                        .filter(Member.department_id == dept_id)
                        .distinct()
                        .all())
 
-       # 提取成员ID并构建返回数据
-       assignee_list = [member_id[0] for member_id in member_ids]
+       # 构建包含id和name的返回数据
+       assignee_list = [{"id": member[0], "name": member[1]} for member in members]
        logging.info(f"User role: {current_user.role.value}, Department ID: {current_user.department_id}, User ID: {user_id}, Assignee list: {assignee_list}")
 
        return jsonify({

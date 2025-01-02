@@ -106,7 +106,23 @@ def get_today_report_view(user_id: str) -> Response:
        
        day_start = today.replace(hour=0, minute=0, second=0, microsecond=0)
        day_end = day_start + timedelta(days=1)
-
+       # 获取前5天的日报总分
+       previous_scores = []
+       for i in range(0, 5):
+           previous_date = day_start - timedelta(days=i)
+           previous_end = previous_date + timedelta(days=1)
+           prev_report = DailyReport.query.filter(
+               DailyReport.user_id == user_id,
+               DailyReport.created_at >= previous_date,
+               DailyReport.created_at < previous_end
+           ).first()
+           
+           if prev_report:
+               total_score = prev_report.basic_score + prev_report.excess_score + prev_report.extra_score
+               previous_scores.append({
+                   "date": previous_date.strftime('%Y-%m-%d'),
+                   "total_score": total_score
+               })
        # 查询任务的 detail_task_requirements
        task = DailyTask.query.filter(
            DailyTask.assignee_id == user_id,
@@ -137,6 +153,7 @@ def get_today_report_view(user_id: str) -> Response:
            } if report else None,
            "total_tasks": len(tasks_info),
            "tasks": tasks_info,
+           "previous_scores": previous_scores,  # 添加前5天的总分数据
            "date": today.strftime('%Y-%m-%d'),
        }).response()
 

@@ -177,7 +177,6 @@ def update_conversation_title(user_id: str, session_id: str):
             "data": None
         }), 500
 
-# 修改路由处理 (routes/gpt.py)
 @gpt_bp.route('/chat', methods=['POST'])
 @require_role(D.admin, D.leader, D.sub_leader)
 def chat_query(user_id: str):
