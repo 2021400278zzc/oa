@@ -194,24 +194,39 @@ def get_report_history_view(user_id: str) -> Response:
             DailyReport.created_at < day_end
         ).first()
         
-        # 获取前5天的日报总分
-        previous_scores = []
-        for i in range(0, 5):
-            previous_date = day_start - timedelta(days=i)
-            previous_end = previous_date + timedelta(days=1)
-            
-            prev_report = DailyReport.query.filter(
-                DailyReport.user_id == target_user_id,
-                DailyReport.created_at >= previous_date,
-                DailyReport.created_at < previous_end
-            ).first()
-            
-            if prev_report:
-                total_score = prev_report.basic_score + prev_report.excess_score + prev_report.extra_score
-                previous_scores.append({
-                    "date": previous_date.strftime('%Y-%m-%d'),
-                    "total_score": total_score
-                })
+        # 获取当前日期所属的周期任务
+        current_task = PeriodTask.query.filter(
+            PeriodTask.assignee_id == target_user_id,
+            PeriodTask.start_time <= query_date,
+            PeriodTask.end_time >= query_date
+        ).first()
+
+        if not current_task:
+            previous_scores = []
+        else:
+            # 获取同一周期任务内，查询日期之前的日报分数（最多5天）
+            previous_scores = []
+            for i in range(0, 5):
+                previous_date = day_start - timedelta(days=i)
+                
+                # 确保日期在当前周期任务范围内
+                if previous_date < current_task.start_time:
+                    break
+                    
+                previous_end = previous_date + timedelta(days=1)
+                
+                prev_report = DailyReport.query.filter(
+                    DailyReport.user_id == target_user_id,
+                    DailyReport.created_at >= previous_date,
+                    DailyReport.created_at < previous_end
+                ).first()
+                
+                if prev_report:
+                    total_score = prev_report.basic_score + prev_report.excess_score + prev_report.extra_score
+                    previous_scores.append({
+                        "date": previous_date.strftime('%Y-%m-%d'),
+                        "total_score": total_score
+                    })
 
         return Response(Response.r.OK, data={
             "date": query_date.strftime('%Y-%m-%d'),
@@ -229,7 +244,11 @@ def get_report_history_view(user_id: str) -> Response:
             } if report else None,
             "total_tasks": len(tasks_info),
             "tasks": tasks_info if tasks_info else [],
-            "previous_scores": previous_scores  # 添加前5天的总分数据
+            "previous_scores": previous_scores,
+            "period_task": {
+                "start_time": current_task.start_time.strftime('%Y-%m-%d') if current_task else None,
+                "end_time": current_task.end_time.strftime('%Y-%m-%d') if current_task else None
+            }
         }).response()
         
     except Exception as e:

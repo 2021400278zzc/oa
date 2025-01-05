@@ -4,6 +4,7 @@ from typing import List
 import uuid
 from datetime import datetime
 from sqlalchemy import func
+from app.controllers.daily_task import generate_daily_task_from_period
 from app.models.daily_report import DailyReport
 from app.modules.sql import db
 from flask import jsonify
@@ -17,6 +18,7 @@ from app.utils.response import Response
 from app.utils.utils import Timer
 from app.utils.constant import DataStructure as D
 from app.models.department import Department
+import logging
 
 @Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
 def calculate_task_progress(period_task_id: str) -> Response:
@@ -49,7 +51,7 @@ def calculate_task_progress(period_task_id: str) -> Response:
                "remaining_content": period_task.detail_task_requirements
            })
 
-       # 获取最近的日报用于分���当前进度
+       # 获取最近的日报用于分析当前进度
        latest_report = daily_reports[-1]
 
        # 构建分析提示
@@ -164,7 +166,7 @@ def create_task(
     # 更新任务信息
     with CRUD(
         PeriodTask,
-        task_id=task_id,  # 使用生成的task_id
+        task_id=task_id,
         assigner_id=assigner_id,
         assignee_id=assignee_id,
         start_time=start_date,
@@ -176,7 +178,15 @@ def create_task(
         if not task.add():
             return Response(Response.r.ERR_INTERNAL)
     
-    # 返回成功响应，包含task_id
+    # 检查是否需要立即生成今天的每日任务
+    today = datetime.now().date()
+    if start_date.date() <= today <= end_date.date():
+        try:
+            generate_daily_task_from_period(task_id, assignee_id)
+        except Exception as e:
+            logging.error(f"立即生成每日任务失败: {str(e)}")
+            # 这里我们不返回错误，因为周期任务已经创建成功
+    
     return Response(Response.r.OK, data={"task_id": task_id})
 
 # TODO
@@ -458,7 +468,7 @@ def get_period_tasks_list(user_id: str):
 
 @Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
 def get_period_tasks(member_id: str, task_id: str = None):
-    """获取成员的当前和未来���期任务列表
+    """获取成员的当前和未来周期任务列表
     Args:
         member_id (str): 成员ID（学号）
     Returns:

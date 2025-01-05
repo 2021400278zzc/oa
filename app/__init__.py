@@ -51,6 +51,10 @@ def create_app() -> Flask:
         daily_task_scheduler.start_scheduler()
         logging.info("每日任务创建调度器已启动并完成初始化")
 
+        # !! 数据库初始化操作，仅开发使用
+        dev_init(app)
+        # !! 数据库初始化操作，仅开发使用
+
     # # 注册关闭回调
     # @app.teardown_appcontext
     # def shutdown_daily_scheduler(exception=None):  # 修改函数名避免重复
@@ -58,10 +62,6 @@ def create_app() -> Flask:
     #     if daily_task_scheduler:
     #         daily_task_scheduler.stop_scheduler()
     #         logging.info("每日任务创建调度器已关闭")
-
-    # !! 数据库初始化操作，仅开发使用
-    dev_init(app)
-    # !! 数据库初始化操作，仅开发使用
 
     # 初始化任务计划程序
     init_scheduler(app)

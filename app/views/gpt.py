@@ -1,3 +1,4 @@
+from datetime import datetime
 import uuid
 from venv import logger
 from flask import Blueprint, request, jsonify
@@ -226,47 +227,187 @@ def chat_query(user_id: str):
             }), 415
 
         logging.info(f"Session ID: {session_id}, Total messages: {len(messages)}")
-        openai_response, model = query_openai(messages)
+        # openai_response, model = query_openai(messages)
         
-        if "error" in openai_response:
-            return jsonify({
-                "code": Response.r.ERR_INTERNAL,
-                "message": openai_response["error"],
-                "data": None
-            }), 500
+        # if "error" in openai_response:
+        #     return jsonify({
+        #         "code": Response.r.ERR_INTERNAL,
+        #         "message": openai_response["error"],
+        #         "data": None
+        #     }), 500
         
-        # 保存对话记录，包含会话ID和用户ID
-        save_conversation(session_id, user_id, "user", current_message)
-        assistant_message = openai_response['choices'][0]['message']['content']
-        save_conversation(session_id, user_id, "assistant", assistant_message)
+        # # 保存对话记录，包含会话ID和用户ID
+        # save_conversation(session_id, user_id, "user", current_message)
+        # assistant_message = openai_response['choices'][0]['message']['content']
+        # save_conversation(session_id, user_id, "assistant", assistant_message)
         
-        # 清理旧消息
-        cleanup_old_messages(session_id)
+        # # 清理旧消息
+        # cleanup_old_messages(session_id)
 
-        response_data = {
-            "code": Response.r.OK,
-            "message": "success",
-            "status": "OK",
-            "data": {
-                "session_id": session_id,  # 返回会话ID
-                "choices": [
-                    {
-                        "message": {
-                            "content": assistant_message,
-                            "role": "assistant"
-                        }
-                    }
-                ],
-                "model": openai_response.get("model", model),
-                "object": openai_response.get("object", "chat.completion"),
-                "usage": openai_response.get('usage', {})
-            }
-        }
+        # response_data = {
+        #     "code": Response.r.OK,
+        #     "message": "success",
+        #     "status": "OK",
+        #     "data": {
+        #         "session_id": session_id,  # 返回会话ID
+        #         "choices": [
+        #             {
+        #                 "message": {
+        #                     "content": assistant_message,
+        #                     "role": "assistant"
+        #                 }
+        #             }
+        #         ],
+        #         "model": openai_response.get("model", model),
+        #         "object": openai_response.get("object", "chat.completion"),
+        #         "usage": openai_response.get('usage', {})
+        #     }
+        # }
         
-        return jsonify(response_data), 200
+        # return jsonify(response_data), 200
+        return Response(
+            stream_openai_response(messages, session_id, user_id, current_message),
+            mimetype='text/event-stream'
+        )
     
     except Exception as e:
         logging.error(f"Error in chat_query: {str(e)}")
+        return jsonify({
+            "code": Response.r.ERR_INTERNAL,
+            "message": str(e),
+            "data": None
+        }), 500
+
+@gpt_bp.route('/delete_conversation', methods=['POST'])
+@require_role(D.admin, D.leader, D.sub_leader)
+def delete_conversation(user_id: str):
+    """删除指定会话的所有对话"""
+    try:
+        session_id = request.args.get('session_id')
+        if not session_id:
+            return jsonify({
+                "code": Response.r.ERR_INVALID_ARGUMENT,
+                "message": "session_id is required",
+                "data": None
+            }), 400
+
+        # 删除指定会话ID的所有消息
+        deleted = Gpt.query.filter_by(
+            session_id=session_id,
+            user_id=user_id
+        ).delete()
+
+        db.session.commit()
+
+        if deleted == 0:
+            return jsonify({
+                "code": Response.r.ERR_NOT_FOUND,
+                "message": "Conversation not found",
+                "data": None
+            }), 404
+
+        return jsonify({
+            "code": Response.r.OK,
+            "message": "Conversation deleted successfully",
+            "data": {
+                "deleted_count": deleted
+            },
+            "status": "OK"
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {str(e)}")
+        db.session.rollback()
+        return jsonify({
+            "code": Response.r.ERR_INTERNAL,
+            "message": str(e),
+            "data": None
+        }), 500
+
+@gpt_bp.route('/delete_message_pair', methods=['POST'])
+@require_role(D.admin, D.leader, D.sub_leader)
+def delete_message_pair(user_id: str):
+    """删除指定时间的对话消息对（用户消息和助手回复），支持多个时间"""
+    try:
+        data = request.get_json()
+        if not data or 'created_at' not in data or 'session_id' not in data:
+            return jsonify({
+                "code": Response.r.ERR_INVALID_ARGUMENT,
+                "message": "created_at list and session_id are required in request body",
+                "data": None
+            }), 400
+
+        created_at_list = data['created_at']
+        session_id = data['session_id']
+
+        if not isinstance(created_at_list, list):
+            return jsonify({
+                "code": Response.r.ERR_INVALID_ARGUMENT,
+                "message": "created_at must be a list",
+                "data": None
+            }), 400
+
+        deleted_count = 0
+        deleted_details = []
+
+        for created_at in created_at_list:
+            try:
+                message_time = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue  # 跳过无效的时间格式
+            
+            # 添加session_id筛选条件
+            user_message = Gpt.query.filter_by(
+                user_id=user_id,
+                session_id=session_id,
+                role='assistant',
+                created_at=message_time
+            ).first()
+
+            if user_message:
+                # 查找对应的助手回复
+                assistant_message = Gpt.query.filter_by(
+                    session_id=session_id,
+                    role='user'
+                ).filter(Gpt.created_at == message_time).first()
+
+                # 删除消息对
+                db.session.delete(user_message)
+                current_count = 1
+                
+                if assistant_message:
+                    db.session.delete(assistant_message)
+                    current_count = 2
+
+                deleted_count += current_count
+                deleted_details.append({
+                    "created_at": created_at,
+                    "deleted_count": current_count
+                })
+
+        if deleted_count == 0:
+            return jsonify({
+                "code": Response.r.ERR_NOT_FOUND,
+                "message": "No messages found for the specified times and session",
+                "data": None
+            }), 404
+
+        db.session.commit()
+
+        return jsonify({
+            "code": Response.r.OK,
+            "message": "Message pairs deleted successfully",
+            "data": {
+                "total_deleted": deleted_count,
+                "details": deleted_details,
+                "session_id": session_id
+            },
+            "status": "OK"
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting message pairs: {str(e)}")
+        db.session.rollback()
         return jsonify({
             "code": Response.r.ERR_INTERNAL,
             "message": str(e),

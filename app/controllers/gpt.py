@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import logging
 from app.modules.sql import db
 from app.models.gpt import Gpt
+import json
 
 # 加载环境变量
 load_dotenv()
@@ -149,3 +150,55 @@ def cleanup_old_messages(session_id: str, keep_last: int = 40) -> None:
     for message in old_messages:
         db.session.delete(message)
     db.session.commit()
+
+def stream_openai_response(messages, session_id, user_id, current_message):
+    """流式处理 OpenAI API 响应"""
+    model = "gpt-4-turbo"
+    openai_data = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": 1000,
+        "stream": True  # 启用流式输出
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    api_urls = [
+        'https://api.openai.com/v1/chat/completions',
+        'https://api.openai-proxy.com/v1/chat/completions',
+    ]
+    
+    full_response = ""
+    for url in api_urls:
+        try:
+            logging.info(f"尝试请求 OpenAI API 地址: {url}")
+            with requests.post(url, json=openai_data, headers=headers, stream=True) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if line:
+                        line = line.decode('utf-8')
+                        if line.startswith('data: '):
+                            if line.strip() == 'data: [DONE]':
+                                # 保存完整的对话记录
+                                save_conversation(session_id, user_id, "user", current_message)
+                                save_conversation(session_id, user_id, "assistant", full_response)
+                                cleanup_old_messages(session_id)
+                                yield f"data: [DONE]\n\n"
+                                return
+                            
+                            json_data = json.loads(line[6:])
+                            if 'choices' in json_data and len(json_data['choices']) > 0:
+                                delta = json_data['choices'][0].get('delta', {})
+                                if 'content' in delta:
+                                    content = delta['content']
+                                    full_response += content
+                                    yield f"data: {json.dumps({'content': content})}\n\n"
+            return
+        except requests.exceptions.RequestException as err:
+            logging.error(f"RequestException for URL {url}: {err}")
+            continue
+    
+    yield f"data: {json.dumps({'error': '无法连接到 OpenAI API'})}\n\n"

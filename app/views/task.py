@@ -60,13 +60,13 @@ def get_assignee_list_view(user_id: str):
                "data": []
            })
 
-       # 根据角色获取可见成员列表
+       # 获取当前时间
+       current_time = func.now()
+       
+       # 根据角色获取基础成员查询
        if current_user.role.value == "admin":
-           # 管理员可见所有成员
-           members = db.session.query(Member.id, Member.name).distinct().all()
-
+           members = db.session.query(Member.id, Member.name).distinct()
        elif current_user.role.value == "leader":
-           # leader可以看到开发组的成员
            dev_dept_ids = (Department.query
                          .filter(Department.name.in_(["开发组-前端", "开发组-后端", "开发组-游戏开发","开发组-OA开发"]))
                          .with_entities(Department.id)
@@ -74,20 +74,30 @@ def get_assignee_list_view(user_id: str):
            dev_dept_id_list = [d[0] for d in dev_dept_ids]
            members = (db.session.query(Member.id, Member.name)
                        .filter(Member.department_id.in_(dev_dept_id_list))
-                       .distinct()
-                       .all())
-
-       elif current_user.role.value == "subleader":
-           # sub_leader只能看到自己部门
+                       .distinct())
+       else:  # subleader
            dept_id = current_user.department_id
            members = (db.session.query(Member.id, Member.name)
                        .filter(Member.department_id == dept_id)
-                       .distinct()
-                       .all())
+                       .distinct())
 
-       # 构建包含id和name的返回数据
-       assignee_list = [{"id": member[0], "name": member[1]} for member in members]
-       print(f"User role: {current_user.role.value}, User ID: {user_id}, Assignee list: {assignee_list}")  
+       # 执行查询获取成员列表
+       members = members.all()
+       
+       # 检查每个成员当前是否有任务
+       assignee_list = []
+       for member_id, member_name in members:
+           has_current_task = PeriodTask.query.filter(
+               PeriodTask.assignee_id == member_id,
+               PeriodTask.start_time <= current_time,
+               PeriodTask.end_time >= current_time
+           ).first() is not None
+           
+           assignee_list.append({
+               "id": member_id, 
+               "name": member_name,
+               "has_current_task": has_current_task
+           })
 
        return jsonify({
            "status": "OK",
@@ -108,50 +118,61 @@ def assign_tasks_view(user_id: str):
    """获取当前用户权限可见的成员列表"""
    try:
        # 获取当前用户信息
-       current_user = Member.query.get(user_id)
-       if not current_user:
+        current_user = Member.query.get(user_id)
+        if not current_user:
            return jsonify({
                "status": "OK",
                "data": []
            })
-
-       # 根据角色获取可见成员列表
-       if current_user.role.value == "admin":
+       # 获取当前时间
+        current_time = func.now()
+       
+       # 根据角色获取基础成员查询
+        if current_user.role.value == "admin":
            # 管理员只能看到自己部门的成员
-           dept_id = current_user.department_id
-           members = (db.session.query(Member.id, Member.name)
-                       .filter(Member.department_id == dept_id)
-                       .distinct()
-                       .all())
+            dept_id = current_user.department_id
+            members = (db.session.query(Member.id, Member.name)
+                        .filter(Member.department_id == dept_id)
+                        .distinct())
+        elif current_user.role.value == "leader":
+            dev_dept_ids = (Department.query
+                          .filter(Department.name.in_(["开发组-前端", "开发组-后端", "开发组-游戏开发","开发组-OA开发"]))
+                          .with_entities(Department.id)
+                          .all())
+            dev_dept_id_list = [d[0] for d in dev_dept_ids]
+            members = (db.session.query(Member.id, Member.name)
+                        .filter(Member.department_id.in_(dev_dept_id_list))
+                        .distinct())
+        else:  # subleader
+            dept_id = current_user.department_id
+            members = (db.session.query(Member.id, Member.name)
+                        .filter(Member.department_id == dept_id)
+                        .distinct())
 
-       elif current_user.role.value == "leader":
-           # leader可以看到开发组的成员
-           dev_dept_ids = (Department.query
-                         .filter(Department.name.in_(["开发组-前端", "开发组-后端", "开发组-游戏开发","开发组-OA开发"]))
-                         .with_entities(Department.id)
-                         .all())
-           dev_dept_id_list = [d[0] for d in dev_dept_ids]
-           members = (db.session.query(Member.id, Member.name)
-                       .filter(Member.department_id.in_(dev_dept_id_list))
-                       .distinct()
-                       .all())
+        # 执行查询获取成员列表
+        members = members.all()
+        
+        # 检查每个成员当前是否有任务
+        assignee_list = []
+        for member_id, member_name in members:
+            has_current_task = PeriodTask.query.filter(
+                PeriodTask.assignee_id == member_id,
+                PeriodTask.start_time <= current_time,
+                PeriodTask.end_time >= current_time
+            ).first() is not None
+            
+            assignee_list.append({
+                "id": member_id, 
+                "name": member_name,
+                "has_current_task": has_current_task
+            })
 
-       elif current_user.role.value == "subleader":  # sub_leader
-           # sub_leader只能看到自己部门
-           dept_id = current_user.department_id
-           members = (db.session.query(Member.id, Member.name)
-                       .filter(Member.department_id == dept_id)
-                       .distinct()
-                       .all())
+        logging.info(f"User role: {current_user.role.value}, Department ID: {current_user.department_id}, User ID: {user_id}, Assignee list: {assignee_list}")
 
-       # 构建包含id和name的返回数据
-       assignee_list = [{"id": member[0], "name": member[1]} for member in members]
-       logging.info(f"User role: {current_user.role.value}, Department ID: {current_user.department_id}, User ID: {user_id}, Assignee list: {assignee_list}")
-
-       return jsonify({
-           "status": "OK",
-           "data": assignee_list
-       })
+        return jsonify({
+            "status": "OK",
+            "data": assignee_list
+        })
 
    except Exception as e:
        import traceback
@@ -162,7 +183,7 @@ def assign_tasks_view(user_id: str):
        }), 500
 
 @task_bp.route("/get_task", methods=["GET"])
-@require_role(D.admin, D.leader, D.sub_leader)
+@require_role(D.admin, D.leader, D.sub_leader,D.member)
 def get_task_view():
     """获取任务视图"""
     try:
@@ -220,7 +241,7 @@ def create_task_view(user_id: str) -> Response:
 
 
 @task_bp.route("/period_tasks", methods=["GET"]) 
-@require_role(D.admin, D.leader, D.sub_leader) 
+@require_role() 
 def get_period_tasks_view(user_id: str):
    """获取周期任务列表路由"""
    # 从请求参数中获取user_id
@@ -232,7 +253,7 @@ def get_period_tasks_view(user_id: str):
    return get_period_tasks_list(target_user_id)
 
 @task_bp.route("/get_found_period_tasks", methods=["GET"])
-@require_role(D.admin, D.leader, D.sub_leader)
+@require_role()
 def get_found_period_tasks_view():
     """获取周期任务列表路由"""
     member_id = request.args.get('Session-Id')

@@ -200,6 +200,11 @@ def get_tasks_range_view(user_id: str) -> Response:
 def get_task_history_view(user_id: str) -> Response:
     try:
         # 获取参数
+        # 从请求参数中获取user_id
+        request_user_id = request.args.get('user_id')
+   
+        # 如果请求中有user_id就使用请求的，否则使用当前登录用户的id
+        target_user_id = request_user_id if request_user_id else user_id
         period_task_id = request.args.get("period_task_id")
         start_date = request.args.get("start_date")
         end_date = request.args.get("end_date")
@@ -238,7 +243,7 @@ def get_task_history_view(user_id: str) -> Response:
             day_end = day_start + timedelta(days=1)
             
             has_report = DailyReport.query.filter(
-                DailyReport.user_id == user_id,
+                DailyReport.user_id == target_user_id,
                 DailyReport.created_at >= day_start,
                 DailyReport.created_at < day_end
             ).first()
