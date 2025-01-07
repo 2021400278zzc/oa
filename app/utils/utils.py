@@ -97,29 +97,50 @@ class Timer:
 
     @staticmethod
     def js_to_utc(js_datetime: str) -> datetime:
-        """将js格式的时间转为datetime\n
-        **js_datetime**: Tue Oct 15 2024 13:13:34 GMT+0800 (Taipei Standard Time)
+        """将js格式的时间转为datetime
+        支持的格式:
+        1. "Tue Oct 15 2024 13:13:34 GMT+0800 (Taipei Standard Time)"
+        2. "Mon Jan 6 2025 00:00:00 GMT+08:00"
         """
-        local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z")
-        utc_date = local_date.astimezone(pytz.utc)
+        if isinstance(js_datetime, datetime):
+            return js_datetime
 
-        return utc_date
+        try:
+            # 尝试解析第一种格式
+            local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z")
+        except ValueError:
+            try:
+                # 尝试解析第二种格式
+                local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z")
+            except ValueError as e:
+                raise ValueError(f"Unsupported datetime format: {js_datetime}") from e
+        
+        # 直接返回解析后的时间，保持原始时间不变
+        return datetime(
+            year=local_date.year,
+            month=local_date.month,
+            day=local_date.day,
+            hour=local_date.hour,
+            minute=local_date.minute,
+            second=local_date.second,
+            tzinfo=pytz.UTC
+        )
 
     @staticmethod
     def utc_now() -> datetime:
         """生成现在的utc时间"""
         return datetime.now(timezone.utc)
     
-    @staticmethod
-    def js_to_utc(js_datetime: str) -> datetime:
-        """将js格式的时间转为datetime\n
-        **js_datetime**: Tue Oct 15 2024 13:13:34 GMT+0800 (Taipei Standard Time)
-        """
-        if isinstance(js_datetime, datetime):  # 如果是 datetime 对象，直接返回
-            return js_datetime.astimezone(pytz.utc)
+    # @staticmethod
+    # def js_to_utc(js_datetime: str) -> datetime:
+    #     """将js格式的时间转为datetime\n
+    #     **js_datetime**: Tue Oct 15 2024 13:13:34 GMT+0800 (Taipei Standard Time)
+    #     """
+    #     if isinstance(js_datetime, datetime):  # 如果是 datetime 对象，直接返回
+    #         return js_datetime.astimezone(pytz.utc)
 
-        # 如果是字符串格式，使用 strptime 解析
-        local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z")
-        utc_date = local_date.astimezone(pytz.utc)
+    #     # 如果是字符串格式，使用 strptime 解析
+    #     local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z")
+    #     utc_date = local_date.astimezone(pytz.utc)
 
-        return utc_date
+    #     return utc_date

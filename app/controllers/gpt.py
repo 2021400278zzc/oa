@@ -1,4 +1,5 @@
-from flask import Blueprint, Flask, request, jsonify
+import datetime
+from flask import Blueprint, Flask, request, jsonify, current_app
 import requests
 import os
 import base64
@@ -44,16 +45,37 @@ def process_image(file):
 
 def create_message(text_content, base64_image=None):
     """创建消息格式"""
-    message_content = {
+    # 添加系统提示词
+    system_message = {
+        "role": "system",
+        "content": """你是一位经验丰富的技术导师，专门帮助学校工作室的技术组长制定学习方案。
+在回答问题时，请遵循以下原则：
+1. 分析组长提出的学习需求
+2. 先联网思考,再提供一个由浅入深、循序渐进的学习方案
+3. 方案应包含：
+   - 学习目标
+   - 知识点分解
+   - 学习路径规划
+   - 预计学习周期
+   - 阶段性检验方式
+4. 注重实践与理论的结合
+5. 推荐优质学习资源
+请不要生成具体代码和示例代码，专注于学习方案的制定。"""
+    }
+    
+    # 创建用户消息
+    user_message = {
         "role": "user",
         "content": [{"type": "text", "text": text_content}]
     }
     if base64_image:
-        message_content["content"].append({
+        user_message["content"].append({
             "type": "image_url",
             "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
         })
-    return [message_content]
+    
+    # 返回系统提示词和用户消息
+    return [system_message, user_message]
 
 def query_openai(messages):
     """向 OpenAI API 发起请求并返回响应"""
@@ -61,7 +83,8 @@ def query_openai(messages):
     openai_data = {
         "model": model,
         "messages": messages,
-        "max_tokens": 1000
+        "max_tokens": 2000,  # 增加 token 限制以获取更详细的回答
+        "temperature": 0.7   # 添加温度参数以保持创造性和一致性的平衡
     }
     
     headers = {
@@ -128,16 +151,42 @@ def get_conversation_history(session_id: str, limit: int = 20) -> list:
     
     return messages
 
-def save_conversation(session_id: str, user_id: str, role: str, message: str) -> None:
-    """保存对话记录"""
-    conversation = Gpt(
-        session_id=session_id,
-        user_id=user_id,
-        role=role,
-        message=message
-    )
-    db.session.add(conversation)
-    db.session.commit()
+# def save_conversation(session_id: str, user_id: str, role: str, message: str) -> None:
+#     """保存对话记录"""
+#     conversation = Gpt(
+#         session_id=session_id,
+#         user_id=user_id,
+#         role=role,
+#         message=message
+#     )
+#     db.session.add(conversation)
+#     db.session.commit()
+
+def save_conversation(session_id: str, user_id: str, role: str, content: str, created_at: datetime = None):
+    """保存对话记录
+    Args:
+        session_id: 会话ID
+        user_id: 用户ID
+        role: 角色（user/assistant）
+        content: 内容
+        created_at: 创建时间（可选）
+    """
+    try:
+        conversation = Gpt(
+            session_id=session_id,
+            user_id=user_id,
+            role=role,
+            message=content
+        )
+        if created_at:
+            conversation.created_at = created_at
+            
+        db.session.add(conversation)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error saving conversation: {str(e)}")
+        raise
 
 def cleanup_old_messages(session_id: str, keep_last: int = 40) -> None:
     """清理指定会话的旧消息"""
@@ -151,14 +200,14 @@ def cleanup_old_messages(session_id: str, keep_last: int = 40) -> None:
         db.session.delete(message)
     db.session.commit()
 
-def stream_openai_response(messages, session_id, user_id, current_message):
+def stream_openai_response(messages):
     """流式处理 OpenAI API 响应"""
     model = "gpt-4-turbo"
     openai_data = {
         "model": model,
         "messages": messages,
         "max_tokens": 1000,
-        "stream": True  # 启用流式输出
+        "stream": True
     }
     
     headers = {
@@ -172,6 +221,7 @@ def stream_openai_response(messages, session_id, user_id, current_message):
     ]
     
     full_response = ""
+    
     for url in api_urls:
         try:
             logging.info(f"尝试请求 OpenAI API 地址: {url}")
@@ -182,11 +232,11 @@ def stream_openai_response(messages, session_id, user_id, current_message):
                         line = line.decode('utf-8')
                         if line.startswith('data: '):
                             if line.strip() == 'data: [DONE]':
-                                # 保存完整的对话记录
-                                save_conversation(session_id, user_id, "user", current_message)
-                                save_conversation(session_id, user_id, "assistant", full_response)
-                                cleanup_old_messages(session_id)
-                                yield f"data: [DONE]\n\n"
+                                # 返回完整的响应和结束标记
+                                yield {
+                                    "type": "done",
+                                    "content": full_response
+                                }
                                 return
                             
                             json_data = json.loads(line[6:])
@@ -195,10 +245,17 @@ def stream_openai_response(messages, session_id, user_id, current_message):
                                 if 'content' in delta:
                                     content = delta['content']
                                     full_response += content
-                                    yield f"data: {json.dumps({'content': content})}\n\n"
+                                    # 返回累加后的完整内容
+                                    yield {
+                                        "type": "chunk",
+                                        "content": full_response  # 这里改为返回完整的累加内容
+                                    }
             return
         except requests.exceptions.RequestException as err:
             logging.error(f"RequestException for URL {url}: {err}")
             continue
     
-    yield f"data: {json.dumps({'error': '无法连接到 OpenAI API'})}\n\n"
+    yield {
+        "type": "error",
+        "content": "无法连接到 OpenAI API"
+    }

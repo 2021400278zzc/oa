@@ -50,13 +50,13 @@ def dev_init(app: Flask) -> None:
             # 以下保持原有成员配置不变
             with CRUD(Member, id="2021400122") as k:
                 if not k.query_key():
-                    k.add(name="kyl", major="empty", role=D.admin, learning="None")
-                    k.instance.set_password()
+                    k.add(name="邝钰伦", major="empty", role=D.sub_leader, learning="None")
+                    k.instance.set_password("123456")
                 else:
                     k.update(
-                        name="kyl",
+                        name="邝钰伦",
                         major="empty",
-                        role=D.admin,
+                        role=D.sub_leader,
                         learning="None",
                         phone="18664341145",
                         email="3105189545@qq.com",
@@ -65,39 +65,39 @@ def dev_init(app: Flask) -> None:
 
             with CRUD(Member, id="2020400065") as w:
                 if not w.query_key():
-                    w.add(name="wl", major="empty", role=D.admin, learning="None")
+                    w.add(name="王璐", major="empty", role=D.leader, learning="None")
                     w.instance.set_password("13713819950abc!")
                 else:
                     w.update(
-                        name="wl",
+                        name="王璐",
                         major="empty",
                         role=D.leader,
                         learning="None",
                         phone="17748539690",
                         email="2261076785@qq.com",
-                        department_id=art_id,
+                        department_id=dev_id,
                     )
 
             with CRUD(Member, id="123456") as w:
                 if not w.query_key():
-                    w.add(name="zch", major="25互联网G6", role=D.admin, learning="开发")
+                    w.add(name="张晨晖", major="25互联网G6", role=D.admin, learning="开发")
                     w.instance.set_password("123456")
                 else:
                     w.update(
-                        name="zch",
+                        name="张晨晖",
                         major="25互联网G6",
-                        role=D.member,
+                        role=D.admin,
                         learning="开发",
                         department_id=dep_id,
                     )
 
             with CRUD(Member, id="2021400278") as w:
                 if not w.query_key():
-                    w.add(name="zzc", major="21云计算", role=D.admin, learning="开发")
+                    w.add(name="张智诚", major="21云计算", role=D.admin, learning="开发")
                     w.instance.set_password("123456")
                 else:
                     w.update(
-                        name="zzc",
+                        name="张智诚",
                         major="21云计算",
                         role=D.admin,
                         learning="开发",
@@ -106,13 +106,13 @@ def dev_init(app: Flask) -> None:
 
             with CRUD(Member, id="654321") as w:
                 if not w.query_key():
-                    w.add(name="zch", major="25互联网G6", role=D.admin, learning="开发")
+                    w.add(name="zch", major="25互联网G6", role=D.member, learning="开发")
                     w.instance.set_password("123456")
                 else:
                     w.update(
-                        name="jyy",
+                        name="金雨艳",
                         major="21人工智能",
-                        role=D.sub_leader,
+                        role=D.member,
                         learning="开发",
                         department_id=dep_id,
                     )

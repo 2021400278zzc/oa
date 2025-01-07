@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 from venv import logger
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, stream_with_context, Response as FlaskResponse, current_app, copy_current_request_context
 from sqlalchemy import desc, func
 
 from app.utils.constant import DataStructure as D
@@ -11,6 +11,7 @@ from app.models.gpt import Gpt
 from app.utils.auth import require_role
 from app.utils.response import Response
 import logging
+import json
 
 # 沿用之前的配置和导入...
 
@@ -93,30 +94,37 @@ def get_conversation_messages(user_id: str, session_id: str):
 
         # 格式化消息，按照每组对话整理
         formatted_messages = []
-        i = 0
-        while i < len(messages):
-            # 处理用户消息
-            if i < len(messages) and messages[i].role == 'user':
-                user_message = {
-                    "id": messages[i].id,
+        messages_dict = {}
+        
+        # 首先按照创建时间分组消息
+        for msg in messages:
+            created_at = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            if created_at not in messages_dict:
+                messages_dict[created_at] = {'user': None, 'assistant': None}
+            
+            if msg.role == 'user':
+                messages_dict[created_at]['user'] = {
+                    "id": msg.id,
                     "role": "user",
-                    "content": messages[i].message,
-                    "created_at": messages[i].created_at.strftime("%Y-%m-%d %H:%M:%S")
+                    "content": msg.message,
+                    "created_at": created_at
                 }
-                formatted_messages.append(user_message)
-                i += 1
-
-            # 处理助手回复
-            if i < len(messages) and messages[i].role == 'assistant':
-                assistant_message = {
-                    "id": messages[i].id,
+            elif msg.role == 'assistant':
+                messages_dict[created_at]['assistant'] = {
+                    "id": msg.id,
                     "role": "assistant",
-                    "content": messages[i].message,
-                    "created_at": messages[i].created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    "content": msg.message,
+                    "created_at": created_at,
                     "model": "gpt-4-turbo"
                 }
-                formatted_messages.append(assistant_message)
-                i += 1
+
+        # 然后按时间顺序添加消息对，确保用户消息在前
+        for timestamp in sorted(messages_dict.keys()):
+            pair = messages_dict[timestamp]
+            if pair['user']:
+                formatted_messages.append(pair['user'])
+            if pair['assistant']:
+                formatted_messages.append(pair['assistant'])
 
         # 构造完整的会话数据
         conversation_data = {
@@ -181,14 +189,11 @@ def update_conversation_title(user_id: str, session_id: str):
 @gpt_bp.route('/chat', methods=['POST'])
 @require_role(D.admin, D.leader, D.sub_leader)
 def chat_query(user_id: str):
-    """处理对 GPT-4 的查询"""
     try:
         content_type = request.headers.get('Content-Type', '')
-        # 从请求中获取会话ID，如果没有则创建新的
         session_id = request.headers.get('Session-Id') or str(uuid.uuid4())
         
         current_message = None
-        base64_image = None
         messages = []
 
         # 获取指定会话的历史记录
@@ -197,15 +202,9 @@ def chat_query(user_id: str):
         # 处理当前请求
         if 'multipart/form-data' in content_type:
             text_content = request.form.get('content', '')
-            file = request.files.get('image')
-            if file and allowed_file(file.filename):
-                base64_image = process_image(file)
-                new_message = create_message(text_content, base64_image)
-            else:
-                new_message = create_message(text_content)
             current_message = text_content
+            new_message = [{"role": "user", "content": text_content}]
             messages = conversation_history + new_message
-        
         elif 'application/json' in content_type:
             data = request.json
             if not data or 'messages' not in data:
@@ -218,62 +217,53 @@ def chat_query(user_id: str):
             current_message = data['messages'][-1]['content']
             new_message = [{"role": "user", "content": current_message}]
             messages = conversation_history + new_message
-        
         else:
             return jsonify({
                 "code": Response.r.ERR_INVALID_ARGUMENT,
                 "message": "Unsupported Media Type",
                 "data": None
             }), 415
+        conversation_timestamp = datetime.datetime.utcnow()
+        # 先保存用户消息
+        save_conversation(session_id, user_id, "user", current_message, created_at=conversation_timestamp)
 
-        logging.info(f"Session ID: {session_id}, Total messages: {len(messages)}")
-        # openai_response, model = query_openai(messages)
-        
-        # if "error" in openai_response:
-        #     return jsonify({
-        #         "code": Response.r.ERR_INTERNAL,
-        #         "message": openai_response["error"],
-        #         "data": None
-        #     }), 500
-        
-        # # 保存对话记录，包含会话ID和用户ID
-        # save_conversation(session_id, user_id, "user", current_message)
-        # assistant_message = openai_response['choices'][0]['message']['content']
-        # save_conversation(session_id, user_id, "assistant", assistant_message)
-        
-        # # 清理旧消息
-        # cleanup_old_messages(session_id)
+        # 获取应用上下文
+        app = current_app._get_current_object()
 
-        # response_data = {
-        #     "code": Response.r.OK,
-        #     "message": "success",
-        #     "status": "OK",
-        #     "data": {
-        #         "session_id": session_id,  # 返回会话ID
-        #         "choices": [
-        #             {
-        #                 "message": {
-        #                     "content": assistant_message,
-        #                     "role": "assistant"
-        #                 }
-        #             }
-        #         ],
-        #         "model": openai_response.get("model", model),
-        #         "object": openai_response.get("object", "chat.completion"),
-        #         "usage": openai_response.get('usage', {})
-        #     }
-        # }
-        
-        # return jsonify(response_data), 200
-        return Response(
-            stream_openai_response(messages, session_id, user_id, current_message),
+        @copy_current_request_context
+        def generate():
+            last_content = None
+            try:
+                for chunk_data in stream_openai_response(messages):
+                    if chunk_data["type"] == "chunk":
+                        last_content = chunk_data["content"]
+                        yield f"data: {json.dumps({'content': chunk_data['content']})}\n\n".encode('utf-8')
+                    elif chunk_data["type"] == "done":
+                        if last_content:
+                            # 在应用上下文中保存响应
+                            with app.app_context():
+                                try:
+                                    save_conversation(session_id, user_id, "assistant", last_content, created_at=conversation_timestamp)
+                                    cleanup_old_messages(session_id)
+                                except Exception as e:
+                                    logging.error(f"Error saving final response in context: {str(e)}")
+                        yield f"data: {json.dumps({'final_content': last_content})}\n\n".encode('utf-8')
+                        yield "data: [DONE]\n\n".encode('utf-8')
+                    elif chunk_data["type"] == "error":
+                        yield f"data: {json.dumps({'error': chunk_data['content']})}\n\n".encode('utf-8')
+            except Exception as e:
+                logging.error(f"Error in generate: {str(e)}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n".encode('utf-8')
+
+        return FlaskResponse(
+            generate(),
             mimetype='text/event-stream'
         )
-    
+
     except Exception as e:
         logging.error(f"Error in chat_query: {str(e)}")
         return jsonify({
-            "code": Response.r.ERR_INTERNAL,
+            "code": "ERR.INTERNAL",
             "message": str(e),
             "data": None
         }), 500
@@ -352,7 +342,7 @@ def delete_message_pair(user_id: str):
 
         for created_at in created_at_list:
             try:
-                message_time = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+                message_time = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
             except ValueError:
                 continue  # 跳过无效的时间格式
             
@@ -360,7 +350,7 @@ def delete_message_pair(user_id: str):
             user_message = Gpt.query.filter_by(
                 user_id=user_id,
                 session_id=session_id,
-                role='assistant',
+                role='user',
                 created_at=message_time
             ).first()
 
@@ -368,7 +358,7 @@ def delete_message_pair(user_id: str):
                 # 查找对应的助手回复
                 assistant_message = Gpt.query.filter_by(
                     session_id=session_id,
-                    role='user'
+                    role='assistant'
                 ).filter(Gpt.created_at == message_time).first()
 
                 # 删除消息对

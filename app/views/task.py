@@ -11,6 +11,7 @@ from app.utils.auth import require_role
 from app.utils.constant import DataStructure as D
 from app.utils.response import Response
 import logging
+from sqlalchemy import or_, and_
 
 task_bp = Blueprint("task", __name__, url_prefix="/task")
 
@@ -62,24 +63,40 @@ def get_assignee_list_view(user_id: str):
 
        # 获取当前时间
        current_time = func.now()
-       
        # 根据角色获取基础成员查询
        if current_user.role.value == "admin":
-           members = db.session.query(Member.id, Member.name).distinct()
+           members = (db.session.query(Member.id, Member.name)
+                     .distinct())
        elif current_user.role.value == "leader":
-           dev_dept_ids = (Department.query
+            dev_dept_ids = (Department.query
                          .filter(Department.name.in_(["开发组-前端", "开发组-后端", "开发组-游戏开发","开发组-OA开发"]))
                          .with_entities(Department.id)
                          .all())
-           dev_dept_id_list = [d[0] for d in dev_dept_ids]
-           members = (db.session.query(Member.id, Member.name)
-                       .filter(Member.department_id.in_(dev_dept_id_list))
+            dev_dept_id_list = [d[0] for d in dev_dept_ids]
+            members = (db.session.query(Member.id, Member.name)
+                       .filter(
+                           or_(
+                               and_(
+                                   Member.department_id.in_(dev_dept_id_list),
+                                   Member.role.notin_(["admin"])
+                               ),
+                               Member.id == user_id  # 添加当前leader自己
+                           )
+                       )
                        .distinct())
        else:  # subleader
-           dept_id = current_user.department_id
-           members = (db.session.query(Member.id, Member.name)
-                       .filter(Member.department_id == dept_id)
-                       .distinct())
+            dept_id = current_user.department_id
+            members = (db.session.query(Member.id, Member.name)
+                        .filter(
+                            or_(
+                                and_(
+                                    Member.department_id == dept_id,
+                                    Member.role.notin_(["admin", "leader"])
+                                ),
+                                Member.id == user_id  # 添加当前subleader自己
+                            )
+                        )
+                        .distinct())
 
        # 执行查询获取成员列表
        members = members.all()
@@ -141,12 +158,28 @@ def assign_tasks_view(user_id: str):
                           .all())
             dev_dept_id_list = [d[0] for d in dev_dept_ids]
             members = (db.session.query(Member.id, Member.name)
-                        .filter(Member.department_id.in_(dev_dept_id_list))
+                        .filter(
+                            or_(
+                                and_(
+                                    Member.department_id.in_(dev_dept_id_list),
+                                    Member.role.notin_(["admin"])
+                                ),
+                                Member.id == user_id  # 添加当前leader自己
+                            )
+                        )
                         .distinct())
         else:  # subleader
             dept_id = current_user.department_id
             members = (db.session.query(Member.id, Member.name)
-                        .filter(Member.department_id == dept_id)
+                        .filter(
+                            or_(
+                                and_(
+                                    Member.department_id == dept_id,
+                                    Member.role.notin_(["admin", "leader"])
+                                ),
+                                Member.id == user_id  # 添加当前subleader自己
+                            )
+                        )
                         .distinct())
 
         # 执行查询获取成员列表
