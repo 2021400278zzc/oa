@@ -67,3 +67,4 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error(f"应用启动失败: {str(e)}", exc_info=True)
         raise
+    

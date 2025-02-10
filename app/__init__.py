@@ -19,7 +19,14 @@ def create_app() -> Flask:
     app = Flask(__name__, static_folder=None)
     app.config.from_object(Config)
 
-    CORS(app)
+    # 配置 CORS，允许所有源和所有请求头
+    CORS(app, 
+        resources={r"/*": {
+            "origins": "*",  # 允许所有源
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": "*",  # 允许所有请求头
+            "supports_credentials": True
+        }})
 
     jwt.init_app(app)
 

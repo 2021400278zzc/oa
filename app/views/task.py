@@ -2,6 +2,7 @@
 import datetime
 from datetime import date
 from flask import Blueprint, jsonify, request
+from flask_cors import cross_origin
 from marshmallow import Schema, ValidationError, fields
 from app.models.department import Department
 from app.models.member import Member
@@ -123,6 +124,7 @@ def get_assignee_list_view(user_id: str):
 
    except Exception as e:
        import traceback
+       
        print(traceback.format_exc())
        return jsonify({
            "status": "ERR_INTERNAL",
@@ -130,6 +132,7 @@ def get_assignee_list_view(user_id: str):
        }), 500
 
 @task_bp.route("/assign_tasks", methods=["GET"])  
+@cross_origin()
 @require_role(D.admin, D.leader, D.sub_leader)  
 def assign_tasks_view(user_id: str):
    """获取当前用户权限可见的成员列表"""
