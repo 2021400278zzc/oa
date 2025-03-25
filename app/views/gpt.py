@@ -3,7 +3,6 @@ import uuid
 from venv import logger
 from flask import Blueprint, request, jsonify, stream_with_context, Response as FlaskResponse, current_app, copy_current_request_context
 from sqlalchemy import desc, func
-
 from app.utils.constant import DataStructure as D
 from app.controllers.gpt import *
 from app.modules.sql import db
@@ -401,5 +400,69 @@ def delete_message_pair(user_id: str):
         return jsonify({
             "code": Response.r.ERR_INTERNAL,
             "message": str(e),
+            "data": None
+        }), 500
+    
+# 在现有gpt_bp蓝图中添加以下路由
+
+@gpt_bp.route('/assessment/<user_id>', methods=['GET'])
+@require_role(D.admin, D.leader, D.sub_leader)  # 根据需要调整角色权限
+def get_user_assessment(user_id: str):
+    """获取用户的最新能力评估"""
+    return get_latest_assessment(user_id).response()
+
+@gpt_bp.route('/assessment/self', methods=['GET'])
+@require_role(D.admin, D.leader, D.sub_leader, D.member)  # 所有角色都可以查看自己的评估
+def get_self_assessment(user_id: str):  # user_id由require_role装饰器注入
+    """获取当前登录用户的最新能力评估"""
+    return get_latest_assessment(user_id).response()
+
+@gpt_bp.route('/assessment/generate', methods=['POST'])
+@require_role(D.admin, D.leader)  # 只有管理员和组长可以手动触发
+def generate_assessments():
+    """手动触发所有用户的能力评估"""
+    result = AbilityAssessmentHandler.schedule_daily_assessment()
+    if result:
+        return jsonify({
+            "code": Response.r.OK,
+            "message": "已安排所有用户的能力评估",
+            "status": "OK",
+            "data": None
+        })
+    else:
+        return jsonify({
+            "code": Response.r.ERR_INTERNAL,
+            "message": "安排能力评估失败",
+            "status": "ERROR",
+            "data": None
+        }), 500
+
+@gpt_bp.route('/assessment/generate/<user_id>', methods=['POST'])
+@require_role(D.admin, D.leader)  # 只有管理员和组长可以手动触发
+def generate_user_assessment(user_id: str):
+    """手动触发指定用户的能力评估"""
+    try:
+        handler = AbilityAssessmentHandler()
+        assessment_result = handler.generate_assessment(user_id)
+        
+        if assessment_result:
+            return jsonify({
+                "code": Response.r.OK,
+                "message": "能力评估生成成功",
+                "status": "OK",
+                "data": assessment_result
+            })
+        else:
+            return jsonify({
+                "code": Response.r.ERR_INTERNAL,
+                "message": "能力评估生成失败",
+                "status": "ERROR",
+                "data": None
+            }), 500
+    except Exception as e:
+        return jsonify({
+            "code": Response.r.ERR_INTERNAL,
+            "message": f"能力评估生成失败: {str(e)}",
+            "status": "ERROR",
             "data": None
         }), 500

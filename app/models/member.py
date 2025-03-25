@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    JSON,
 )
 
 from app.modules.sql import db
@@ -48,7 +49,8 @@ class Member(db.Model):
     phone = Column(String(15), unique=True)  # 手机号，可选，唯一
     email = Column(String(255), unique=True)  # 邮箱，可选，唯一
     password = Column(String(255))  # hash化的密码，可选
-
+    domain = Column(JSON, default=lambda: [])  # 擅长领域
+    period_task_score = Column(Integer, default=0)  # 学期任务平均分
     created_at = Column(DateTime, default=func.now())  # 创建时间
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())  # 更新时间
 
@@ -72,6 +74,17 @@ class Member(db.Model):
             return bcrypt.check_password_hash(self.password, password)
         return False
 
+    def get_domains(self) -> list:
+        """获取用户的擅长领域列表"""
+        return self.domain if isinstance(self.domain, list) else []
+
+    def set_domains(self, domains: list) -> None:
+        """设置用户的擅长领域列表"""
+        if not isinstance(domains, list):
+            self.domain = []
+        else:
+            self.domain = list(domains)  # 创建新的列表副本
+
     def to_dict(self) -> dict[str, Any]:
         """将实例信息输出为不包含敏感字符与特别效果的字典"""
         department = ""
@@ -92,4 +105,5 @@ class Member(db.Model):
             "picture": self.picture,
             "phone": self.phone,
             "email": self.email,
+            "domain": self.get_domains(),
         }

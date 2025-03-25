@@ -39,7 +39,7 @@ def period_task_init_scheduler(app):
 def daily_task_init_scheduler(app):
     global daily_task_scheduler
     try:
-        if not daily_task_scheduler:
+        if not daily_task_scheduler:    
             daily_task_scheduler = DailyTaskScheduler(app)
             daily_task_scheduler.start_scheduler()
             

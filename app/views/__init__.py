@@ -11,6 +11,8 @@ from .user import user_bp
 from .gpt import gpt_bp
 from .daily_task import daily_task_bp
 from .daily_report import daily_report_bp
+from .item import item_bp
+from .honor import honor_bp
 
 def register_blueprints(app: Flask) -> None:
     """注册所有蓝图至Flask中"""
@@ -25,3 +27,5 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(gpt_bp)
     app.register_blueprint(daily_task_bp)
     app.register_blueprint(daily_report_bp)
+    app.register_blueprint(item_bp)
+    app.register_blueprint(honor_bp)

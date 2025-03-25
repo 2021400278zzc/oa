@@ -2,7 +2,7 @@ import datetime
 import traceback
 from typing import List
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import func
 from app.controllers.daily_task import generate_daily_task_from_period
 from app.models.daily_report import DailyReport
@@ -632,3 +632,49 @@ def get_members_period_tasks(user_id: str):
             "data": None
         }), 500
     
+@Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
+def get_task_average_score(user_id: str, start_date: str = None, end_date: str = None) -> Response:
+    """获取用户在指定时间段内的周期任务平均分和昨天的日报评分"""
+    try:
+        # 获取昨天的日期范围
+        yesterday = datetime.now().date() - timedelta(days=1)
+        yesterday_start = datetime.combine(yesterday, datetime.min.time())
+        yesterday_end = datetime.combine(yesterday, datetime.max.time())
+
+        # 查询昨天的日报
+        daily_report = DailyReport.query.filter(
+            DailyReport.user_id == user_id,
+            DailyReport.created_at >= yesterday_start,
+            DailyReport.created_at <= yesterday_end
+        ).first()
+
+        # 计算昨天日报总分
+        yesterday_score = 0
+        if daily_report:
+            basic_score = daily_report.basic_score or 0
+            excess_score = daily_report.excess_score or 0
+            extra_score = daily_report.extra_score or 0
+            yesterday_score = basic_score + excess_score + extra_score
+
+        # 获取成员的存储平均分
+        member = Member.query.get(user_id)
+        average_score = member.period_task_score if member else 0
+
+        return Response(
+            status_obj=Response.r.OK,
+            data={
+                "average_score": average_score,
+                "yesterday_score": yesterday_score,
+                "time_range": {
+                    "start": start_date,
+                    "end": end_date
+                }
+            }
+        )
+
+    except Exception as e:
+        Log.error(f"Error calculating scores: {str(e)}")
+        return Response(
+            status_obj=Response.r.ERR_INTERNAL,
+            message=str(e)
+        )

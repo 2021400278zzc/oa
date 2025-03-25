@@ -407,3 +407,10 @@ def get_members_period_tasks_view(user_id: str):
     """获取权限范围内所有成员的周期任务列表路由"""
     return get_members_period_tasks(user_id)
 
+@task_bp.route("/average_score", methods=["GET"])
+@require_role()  # 所有角色都可以查看自己的平均分
+def get_task_average_score_view(user_id: str):
+    """获取个人任务平均分视图"""
+    start_date = request.args.get('start_date')  # 从查询参数获取开始日期
+    end_date = request.args.get('end_date')      # 从查询参数获取结束日期
+    return get_task_average_score(user_id, start_date, end_date).response()

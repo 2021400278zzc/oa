@@ -6,7 +6,7 @@ from app.utils.response import Response
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
-@admin_bp.route("/", methods=["POST", "GET"])
+@admin_bp.route("/admin", methods=["POST", "GET"])
 def admin() -> Response:
     if request.method == "POST":
         data = request.get_json()

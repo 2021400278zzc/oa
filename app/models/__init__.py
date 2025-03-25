@@ -4,8 +4,7 @@ from flask_migrate import revision, upgrade
 from app.utils.constant import DataStructure as D
 from app.utils.database import CRUD
 from app.utils.logger import Log
-
-from . import daily_report, department, member, period_task, verification,gpt,daily_task
+from . import daily_report, department, member, period_task, verification,gpt,daily_task,item,ability_assessment, honor
 from .department import Department
 from .member import Member
 

@@ -1,6 +1,7 @@
 import logging
+import os
 
-from flask import Flask
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 
 from app.models import dev_init
@@ -12,6 +13,7 @@ from app.modules.scheduler import init_scheduler
 from app.modules.sql import db, migrate
 from app.views import register_blueprints
 from config import Config
+from app.modules.sched import init_schedulers
 
 
 def create_app() -> Flask:
@@ -35,6 +37,14 @@ def create_app() -> Flask:
     
     # 注册蓝图 (只需要一次)
     register_blueprints(app)
+
+    # 获取项目根目录路径
+    root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # 配置静态文件路由
+    @app.route('/public/<path:filename>')
+    def public_files(filename):
+        return send_from_directory(os.path.join(root_path, 'public'), filename)
 
     # 在应用上下文中初始化和启动定时任务调度器
     # global period_task_scheduler
@@ -72,6 +82,10 @@ def create_app() -> Flask:
 
     # 初始化任务计划程序
     init_scheduler(app)
+
+    # 初始化所有定时任务调度器
+    schedulers = init_schedulers(app)
+    app.schedulers = schedulers  # 可选：将调度器保存在app对象中，以便后续访问
 
     app.logger.setLevel(logging.INFO)
     app.logger.addHandler(file_handler)
