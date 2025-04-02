@@ -114,7 +114,7 @@ def get_conversation_messages(user_id: str, session_id: str):
                     "role": "assistant",
                     "content": msg.message,
                     "created_at": created_at,
-                    "model": "gpt-4-turbo"
+                    "model": "deepseek-r1:8b"
                 }
 
         # 然后按时间顺序添加消息对，确保用户消息在前
@@ -222,7 +222,7 @@ def chat_query(user_id: str):
                 "message": "Unsupported Media Type",
                 "data": None
             }), 415
-        conversation_timestamp = datetime.datetime.utcnow()
+        conversation_timestamp = datetime.utcnow()
         # 先保存用户消息
         save_conversation(session_id, user_id, "user", current_message, created_at=conversation_timestamp)
 
@@ -233,7 +233,7 @@ def chat_query(user_id: str):
         def generate():
             last_content = None
             try:
-                for chunk_data in stream_openai_response(messages):
+                for chunk_data in stream_ollama_response(messages):
                     if chunk_data["type"] == "chunk":
                         last_content = chunk_data["content"]
                         yield f"data: {json.dumps({'content': chunk_data['content']})}\n\n".encode('utf-8')
@@ -341,7 +341,7 @@ def delete_message_pair(user_id: str):
 
         for created_at in created_at_list:
             try:
-                message_time = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+                message_time = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
             except ValueError:
                 continue  # 跳过无效的时间格式
             
