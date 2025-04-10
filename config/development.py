@@ -47,7 +47,7 @@ class Config:
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
     DISPOSABLE_APP_KEY = str(uuid4())
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False  # 禁用SQL警告

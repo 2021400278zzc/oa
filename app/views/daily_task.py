@@ -12,6 +12,7 @@ from app.utils.auth import require_role
 from app.utils.constant import DataStructure as D
 from app.utils.response import Response
 from app.modules.sql import db
+from app.utils.task_parser import parse_task_requirements
 
 daily_task_bp = Blueprint("daily_task", __name__, url_prefix="/daily_task")
 
@@ -110,6 +111,64 @@ def get_tasks_view(user_id: str) -> Response:
                 "completed_description": task.completed_task_description,
                 "created_at": task.created_at.isoformat(),
                 "updated_at": task.updated_at.isoformat() if task.updated_at else None
+            }
+            tasks_info.append(add_task_status(task_info, has_report))
+        
+        return Response(Response.r.OK, data={
+            "total_tasks": len(tasks_info),
+            "tasks": tasks_info,
+            "date": date.strftime('%Y-%m-%d')
+        }).response()
+        
+    except Exception as e:
+        return Response(Response.r.ERR_INTERNAL, message=str(e)).response()
+
+@daily_task_bp.route("/section_get_tasks", methods=["GET"])
+@require_role()
+def section_get_tasks_view(user_id: str) -> Response:
+    """获取任务列表，支持日期查询，并将详细任务解析为小任务列表"""
+    try:
+        # 获取日期参数
+        # 从请求参数中获取user_id
+        request_user_id = request.args.get('user_id')
+        # 如果请求中有user_id就使用请求的，否则使用当前登录用户的id
+        target_user_id = request_user_id if request_user_id else user_id
+        date_str = request.args.get("date")
+        if date_str:
+            try:
+                date = datetime.strptime(date_str, '%Y-%m-%d')
+            except ValueError:
+                return Response(Response.r.ERR_INVALID_ARGUMENT, message="日期格式错误，请使用 YYYY-MM-DD 格式").response()
+        else:
+            date = datetime.now()
+        
+        # 获取指定日期的时间范围
+        day_start = date.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        
+        # 查询任务
+        daily_tasks = DailyTask.query.filter(
+            DailyTask.assignee_id == target_user_id,
+            DailyTask.task_date >= day_start,
+            DailyTask.task_date < day_end
+        ).all()
+        
+        # 检查是否有日报
+        has_report = DailyReport.query.filter(
+            DailyReport.user_id == user_id,
+            DailyReport.created_at >= day_start,
+            DailyReport.created_at < day_end
+        ).first()
+        
+        tasks_info = []
+        for task in daily_tasks:
+            # 解析详细任务内容
+            parsed_tasks = parse_task_requirements(task.detail_task_requirements)
+            
+            task_info = {
+                "task_id": task.task_id, 
+                "basic_task": task.basic_task_requirements,
+                "parsed_tasks": parsed_tasks  # 添加解析后的任务列表
             }
             tasks_info.append(add_task_status(task_info, has_report))
         

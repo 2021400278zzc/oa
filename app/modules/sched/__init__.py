@@ -5,6 +5,7 @@ from app.modules.sched.daily_task_sched import PeriodTaskScheduler
 from app.modules.sched.period_task_sched import DailyTaskScheduler
 from app.modules.sched.ability_assessment_sched import AbilityAssessmentScheduler
 from app.modules.sched.member_score_sched import MemberScoreScheduler
+from app.modules.sched.notification_sched import NotificationScheduler
 
 def init_schedulers(app):
     """初始化所有定时任务调度器"""
@@ -20,9 +21,13 @@ def init_schedulers(app):
     # 初始化成员得分更新调度器
     member_score_scheduler = MemberScoreScheduler(app)
     
+    # 初始化通知调度器
+    notification_scheduler = NotificationScheduler(app)
+    
     return {
         'daily_task': daily_task_scheduler,
         'period_task': period_task_scheduler,
         'ability_assessment': ability_assessment_scheduler,
-        'member_score': member_score_scheduler
+        'member_score': member_score_scheduler,
+        'notification': notification_scheduler
     }

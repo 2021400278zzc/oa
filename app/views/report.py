@@ -3,6 +3,9 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request
 from marshmallow import Schema, ValidationError, fields
 from sqlalchemy import func
+import base64
+import io
+from werkzeug.datastructures import FileStorage
 
 from app.controllers.report import create_report
 from app.models.daily_report import DailyReport
@@ -130,6 +133,10 @@ def get_today_report(user_id: str):
 class CreateReportSchema(Schema):
     report_text = fields.String(required=True)
 
+class Base64CreateReportSchema(Schema):
+    report_text = fields.String(required=True)
+    pictures = fields.List(fields.String(), required=False)
+
 
 @report_bp.route("/create_report", methods=["POST"])
 @require_role()
@@ -146,6 +153,78 @@ def create_report_view(user_id: str) -> Response:
         # 确保从request.form中获取数据
         report_data = schema.load(request.form)
         pictures = request.files.getlist('pictures')  # 获取上传的图片
+        
+        res = create_report(
+            user_id=user_id,
+            report_text=report_data['report_text'],
+            pictures=pictures
+        )
+        
+        return res.response()
+    except ValidationError as validation_error:
+        # 打印具体的验证错误信息
+        print("Validation error:", validation_error.messages)
+        return Response(
+            Response.r.ERR_INVALID_ARGUMENT, 
+            message=validation_error.messages,
+            immediate=True
+        )
+    except Exception as e:
+        print("Unexpected error:", str(e))
+        return Response(Response.r.ERR_INTERNAL, message=str(e), immediate=True)
+
+@report_bp.route("/base_create_report", methods=["POST"])
+@require_role()
+def base_create_report_view(user_id: str) -> Response:
+    """创建日报路由（接收base64编码的图片）
+    需要提供token以验证用户id
+    """
+    try:
+        # 打印接收到的数据，帮助调试
+        print("Received JSON data:", request.json)
+
+        schema = Base64CreateReportSchema()
+        # 从request.json中获取数据
+        report_data = schema.load(request.json)
+        
+        # 处理base64编码的图片，转换为文件对象
+        pictures = []
+        if 'pictures' in report_data and report_data['pictures']:
+            for idx, base64_image in enumerate(report_data['pictures']):
+                # 尝试解析图片格式
+                img_format = "jpeg"  # 默认格式
+                if "data:image/" in base64_image:
+                    try:
+                        # 提取MIME类型
+                        mime_part = base64_image.split(';')[0].split(':')[1]
+                        img_format = mime_part.split('/')[1]
+                    except (IndexError, ValueError):
+                        pass  # 保持默认格式
+                
+                # 去除base64编码前缀
+                if "base64," in base64_image:
+                    base64_data = base64_image.split("base64,")[1]
+                else:
+                    base64_data = base64_image
+                
+                # 解码base64数据
+                try:
+                    binary_data = base64.b64decode(base64_data)
+                    
+                    # 创建文件对象
+                    file_obj = io.BytesIO(binary_data)
+                    filename = f"image_{idx}.{img_format}"
+                    
+                    # 创建FileStorage对象（与request.files兼容）
+                    file_storage = FileStorage(
+                        stream=file_obj,
+                        filename=filename,
+                        content_type=f"image/{img_format}"
+                    )
+                    pictures.append(file_storage)
+                except Exception as decode_error:
+                    print(f"Base64解码错误：{str(decode_error)}")
+                    continue
         
         res = create_report(
             user_id=user_id,

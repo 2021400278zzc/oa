@@ -66,7 +66,7 @@ def calculate_task_progress(period_task_id: str) -> Response:
     send_text=prompt,
     user_id=period_task.assigner_id,
     method="task",
-    model_type="gpt4",  # 使用 GPT-4
+    model_type="deepseek",  # 使用 DeepSeek
     dictionary_like=True,
     temperature=0.3,    # 降低随机性
     max_tokens=1000,    # 设置最大token数
@@ -148,17 +148,17 @@ def create_task(
     start_date = Timer.js_to_utc(start_time)
     end_date = Timer.js_to_utc(end_time)
 
-    # 获取双方信息
-    assigner_info = CRUD(Member, id=assigner_id).query_key().first()
-    assignee_info = CRUD(Member, id=assignee_id).query_key().first()
+    # # 获取双方信息
+    # assigner_info = CRUD(Member, id=assigner_id).query_key().first()
+    # assignee_info = CRUD(Member, id=assignee_id).query_key().first()
 
-    # 如果组别不匹配，则返回冲突错误
-    if assignee_info.department_id != assigner_info.department_id:
-        return Response(Response.r.ERR_CONFLICTION)
+    # # 如果组别不匹配，则返回冲突错误
+    # if assignee_info.department_id != assigner_info.department_id:
+    #     return Response(Response.r.ERR_CONFLICTION)
 
     # 查找是否存在任务的结束时间大于现在任务开始时间的项，即是否存在未结束的任务
     with CRUD(PeriodTask, assignee_id=assignee_id) as q_period:
-        if q_period.query_key(q_period.model.end_time > start_time):
+        if q_period.query_key(q_period.model.end_time > start_date):
             return Response(Response.r.ERR_CONFLICTION)
     
     task_id = str(uuid.uuid4())  # 生成任务ID

@@ -8,6 +8,7 @@ from werkzeug.datastructures import FileStorage
 
 from app.models.daily_task import DailyTask
 from app.models.daily_report import DailyReport
+from app.models.period_task import PeriodTask
 from app.modules.llm import create_completion
 from app.utils.constant import LLMPrompt as LLM
 from app.utils.constant import LLMStructure as LLMS
@@ -17,6 +18,7 @@ from app.utils.database import CRUD
 from app.utils.logger import Log
 from app.utils.response import Response
 from app.modules.sql import db
+from app.controllers.task_progress import update_task_progress
 
 class DailyReportHandler:
     """日报处理器"""
@@ -137,7 +139,7 @@ class DailyReportHandler:
                 image_data if image_data else None,
                 dictionary_like=True,
                 response_format=LLMS.DailyReport,
-                model_type="4o"
+                model_type="deepseek"
             )
             
             # 确保评分不为空
@@ -169,7 +171,7 @@ class DailyReportHandler:
             # 获取今日任务信息
             tasks_info = self.get_today_tasks()
             if not tasks_info:
-                return Response(Response.r.ERR_NOT_FOUND, message="未找到今日任务")
+                return Response(Response.r.ERR_NOT_FOUND, message="今日没有需要完成的任务")
             
             # 检查是否已提交今日日报
             existing_report = DailyReport.query.filter(
@@ -213,6 +215,10 @@ class DailyReportHandler:
                 for task in daily_tasks:
                     task.completed_task_description = report_text
                     task.updated_at = datetime.now()
+                    
+                    # 3. 更新相关周期任务的进度
+                    if task.period_task_id:
+                        update_task_progress(self.user_id, task.period_task_id, report_text)
                 
                 # 保存所有更改
                 db.session.add(report)
@@ -236,5 +242,5 @@ class DailyReportHandler:
                 raise
                 
         except Exception as e:
-            Log.error(f"Error in handle_report_submission: {str(e)}")
+            Log.error(f"Error submitting daily report: {str(e)}")
             return Response(Response.r.ERR_INTERNAL, message=str(e))

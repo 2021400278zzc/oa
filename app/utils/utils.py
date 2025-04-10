@@ -99,32 +99,60 @@ class Timer:
     def js_to_utc(js_datetime: str) -> datetime:
         """将js格式的时间转为datetime
         支持的格式:
-        1. "Tue Oct 15 2024 13:13:34 GMT+0800 (Taipei Standard Time)"
-        2. "Mon Jan 6 2025 00:00:00 GMT+08:00"
+        1. "Tue Apr 2 2025 8:13:34 GMT+0800" 
+        2. "Tue Oct 15 2024 13:13:34 GMT+0800 (Taipei Standard Time)"
+        3. "Mon Jan 6 2025 00:00:00 GMT+08:00"
         """
         if isinstance(js_datetime, datetime):
             return js_datetime
 
-        try:
-            # 尝试解析第一种格式
-            local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z")
-        except ValueError:
-            try:
-                # 尝试解析第二种格式
-                local_date = datetime.strptime(js_datetime, "%a %b %d %Y %H:%M:%S GMT%z")
-            except ValueError as e:
-                raise ValueError(f"Unsupported datetime format: {js_datetime}") from e
+        # 预处理字符串，移除括号内容
+        clean_datetime = js_datetime.split('(')[0].strip()
         
-        # 直接返回解析后的时间，保持原始时间不变
-        return datetime(
-            year=local_date.year,
-            month=local_date.month,
-            day=local_date.day,
-            hour=local_date.hour,
-            minute=local_date.minute,
-            second=local_date.second,
-            tzinfo=pytz.UTC
-        )
+        # 尝试不同的格式解析
+        formats = [
+            "%a %b %d %Y %H:%M:%S GMT%z",  # 带时区偏移的标准格式
+            "%a %b %d %Y %H:%M:%S GMT+%H%M", # 时区格式为GMT+HHMM
+            "%a %b %d %Y %H:%M:%S GMT%H%M",  # 时区格式为GMTHHMM
+        ]
+        
+        for fmt in formats:
+            try:
+                # 对GMT+0800这种格式特殊处理，添加冒号使其符合%z格式要求
+                if "GMT+0800" in clean_datetime:
+                    clean_datetime = clean_datetime.replace("GMT+0800", "GMT+08:00")
+                
+                local_date = datetime.strptime(clean_datetime, fmt)
+                # 如果没有时区信息，默认为UTC时区
+                if local_date.tzinfo is None:
+                    local_date = local_date.replace(tzinfo=timezone.utc)
+                
+                return local_date
+            except ValueError:
+                continue
+        
+        # 尝试手动解析
+        try:
+            parts = clean_datetime.split()
+            if len(parts) >= 5 and parts[4].startswith('GMT'):
+                year = int(parts[3])
+                month_map = {
+                    'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+                    'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+                }
+                month = month_map.get(parts[1], 1)
+                day = int(parts[2])
+                time_parts = parts[3].split(':')
+                hour = int(time_parts[0])
+                minute = int(time_parts[1]) if len(time_parts) > 1 else 0
+                second = int(time_parts[2]) if len(time_parts) > 2 else 0
+                
+                # 创建UTC时间
+                return datetime(year, month, day, hour, minute, second, tzinfo=timezone.utc)
+        except Exception as e:
+            pass
+        
+        raise ValueError(f"Unsupported datetime format: {js_datetime}")
 
     @staticmethod
     def utc_now() -> datetime:

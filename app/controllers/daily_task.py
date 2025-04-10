@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 from app.models.period_task import PeriodTask
 from app.models.daily_task import DailyTask
 from app.models.daily_report import DailyReport
@@ -55,17 +55,27 @@ def get_previous_task_status(assignee_id: str, period_task_id: str) -> Dict:
     }
 
 @Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
-def generate_daily_task_from_period(period_task_id: str, assigner_id: str) -> Response:
-   """根据周期任务的详细要求生成每日任务"""
+def generate_daily_task_from_period(period_task_id: str, assigner_id: str, return_object: bool = False) -> Union[Response, DailyTask]:
+   """根据周期任务的详细要求生成每日任务
+   
+   Args:
+       period_task_id: 周期任务ID
+       assigner_id: 布置者ID
+       return_object: 是否返回DailyTask对象，为True时直接返回DailyTask对象，为False时返回Response对象
+   
+   Returns:
+       如果return_object为True，返回DailyTask对象（通知系统使用）
+       如果return_object为False，返回Response对象（API接口使用）
+   """
    try:
        # 获取周期任务
        period_task = PeriodTask.query.filter_by(task_id=period_task_id).first()
        if not period_task:
-           return Response(Response.r.ERR_NOT_FOUND, message="找不到指定的周期任务")
+           return None if return_object else Response(Response.r.ERR_NOT_FOUND, message="找不到指定的周期任务")
        
        # 检查任务是否已结束
        if period_task.end_time < datetime.now():
-           return Response(Response.r.ERR_EXPIRED, message="周期任务已结束")
+           return None if return_object else Response(Response.r.ERR_EXPIRED, message="周期任务已结束")
            
        # 检查今天是否已经创建过任务
        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -78,7 +88,7 @@ def generate_daily_task_from_period(period_task_id: str, assigner_id: str) -> Re
        ).first()
        
        if existing_task:
-           return Response(Response.r.ERR_CONFLICTION, message="今日已生成该周期任务的每日任务")
+           return existing_task if return_object else Response(Response.r.ERR_CONFLICTION, message="今日已生成该周期任务的每日任务")
        
        # 获取前一天任务状态
        previous_status = get_previous_task_status(period_task.assignee_id, period_task_id)
@@ -142,17 +152,18 @@ def generate_daily_task_from_period(period_task_id: str, assigner_id: str) -> Re
        db.session.add(daily_task)
        db.session.commit()
        
-       return Response(Response.r.OK, data={
-           "task_id": daily_task.task_id,
-        #    "basic_task": basic_task,
-        #    "detail_task": detail_task,
-           "is_continued": is_continued
-       })
+       if return_object:
+           return daily_task
+       else:
+           return Response(Response.r.OK, data={
+               "task_id": daily_task.task_id,
+               "is_continued": is_continued
+           })
        
    except Exception as e:
        db.session.rollback()
        Log.error(f"Error in generate_daily_task_from_period: {str(e)}")
-       return Response(Response.r.ERR_INTERNAL, message=str(e))
+       return None if return_object else Response(Response.r.ERR_INTERNAL, message=str(e))
 
 @Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
 def get_daily_task(user_id: str, date_str: Optional[str] = None) -> Response:

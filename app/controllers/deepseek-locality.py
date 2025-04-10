@@ -25,7 +25,10 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY') 
+
+# 添加新的Ollama配置
+OLLAMA_BASE_URL = "http://localhost:11434"  # Ollama默认端口
+OLLAMA_MODEL = "deepseek-r1:8b"
 
 # 配置日志记录
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -81,36 +84,29 @@ def create_message(text_content, base64_image=None):
     return [system_message, user_message]
 
 def query_openai(messages):
-    """向 API 发起请求并返回响应"""
-    model = "deepseek-chat"
-    deepseek_data = {
-        "model": model,
+    """向 OpenAI API 发起请求并返回响应"""
+    # 使用Ollama API代替OpenAI
+    return query_ollama(messages)
+
+def query_ollama(messages):
+    """向 Ollama API 发起请求并返回响应"""
+    url = f"{OLLAMA_BASE_URL}/api/chat"
+    
+    # 转换消息格式为Ollama格式
+    ollama_data = {
+        "model": OLLAMA_MODEL,
         "messages": messages,
-        "max_tokens": 2000,  # 增加 token 限制以获取更详细的回答
-        "temperature": 0.7   # 添加温度参数以保持创造性和一致性的平衡
+        "stream": False
     }
     
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    api_urls = [
-        'https://api.deepseek.com/v1/chat/completions',
-    ]
-    
-    for url in api_urls:
-        try:
-            logging.info(f"尝试请求 DeepSeek API 地址: {url}")
-            response = requests.post(url, json=deepseek_data, headers=headers)
-            response.raise_for_status()
-            return response.json(), model
-        except requests.exceptions.HTTPError as http_err:
-            logging.error(f"HTTPError for URL {url}: {http_err}")
-        except requests.exceptions.RequestException as err:
-            logging.error(f"RequestException for URL {url}: {err}")
-    
-    return {"error": "无法连接到 DeepSeek API"}, model
+    try:
+        logging.info(f"尝试请求 Ollama API 地址: {url}")
+        response = requests.post(url, json=ollama_data)
+        response.raise_for_status()
+        return response.json(), OLLAMA_MODEL
+    except requests.exceptions.RequestException as err:
+        logging.error(f"Ollama API请求失败: {err}")
+        return {"error": "无法连接到 Ollama API"}, OLLAMA_MODEL
 
 def get_conversation_history(user_id: str, limit: int = 20) -> list:
     """获取用户的最近对话历史"""
@@ -202,63 +198,48 @@ def cleanup_old_messages(session_id: str, keep_last: int = 40) -> None:
     db.session.commit()
 
 def stream_openai_response(messages):
-    """流式处理 API 响应"""
-    model = "deepseek-chat"
-    deepseek_data = {
-        "model": model,
+    """流式处理 OpenAI API 响应"""
+    # 使用Ollama流式响应代替OpenAI
+    return stream_ollama_response(messages)
+
+def stream_ollama_response(messages):
+    """流式处理 Ollama API 响应"""
+    url = f"{OLLAMA_BASE_URL}/api/chat"
+    
+    ollama_data = {
+        "model": OLLAMA_MODEL,
         "messages": messages,
-        "max_tokens": 1000,
         "stream": True
     }
     
-    headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    api_urls = [
-        'https://api.deepseek.com/v1/chat/completions',
-    ]
-    
     full_response = ""
     
-    for url in api_urls:
-        try:
-            logging.info(f"尝试请求 DeepSeek API 地址: {url}")
-            with requests.post(url, json=deepseek_data, headers=headers, stream=True) as response:
-                response.raise_for_status()
-                for line in response.iter_lines():
-                    if line:
-                        line = line.decode('utf-8')
-                        if line.startswith('data: '):
-                            if line.strip() == 'data: [DONE]':
-                                # 返回完整的响应和结束标记
-                                yield {
-                                    "type": "done",
-                                    "content": full_response
-                                }
-                                return
-                            
-                            json_data = json.loads(line[6:])
-                            if 'choices' in json_data and len(json_data['choices']) > 0:
-                                delta = json_data['choices'][0].get('delta', {})
-                                if 'content' in delta:
-                                    content = delta['content']
-                                    full_response += content
-                                    # 返回累加后的完整内容
-                                    yield {
-                                        "type": "chunk",
-                                        "content": full_response  # 这里改为返回完整的累加内容
-                                    }
-            return
-        except requests.exceptions.RequestException as err:
-            logging.error(f"RequestException for URL {url}: {err}")
-            continue
-    
-    yield {
-        "type": "error",
-        "content": "无法连接到 DeepSeek API"
-    }
+    try:
+        logging.info(f"尝试请求 Ollama 流式API 地址: {url}")
+        with requests.post(url, json=ollama_data, stream=True) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if line:
+                    json_data = json.loads(line)
+                    if 'message' in json_data:
+                        content = json_data['message']['content']
+                        full_response += content
+                        yield {
+                            "type": "chunk",
+                            "content": full_response
+                        }
+                    if json_data.get('done', False):
+                        yield {
+                            "type": "done",
+                            "content": full_response
+                        }
+                        return
+    except requests.exceptions.RequestException as err:
+        logging.error(f"Ollama流式API请求失败: {err}")
+        yield {
+            "type": "error",
+            "content": "无法连接到 Ollama API"
+        }
 
 # 基于ChatGPT的能力评估控制器
 import os
@@ -412,7 +393,7 @@ class AbilityAssessmentHandler:
             float: 相似度分数 (0-1)
         """
         try:
-            # 使用DeepSeek API计算文本相似度
+            # 使用Ollama API计算文本相似度
             prompt = f"""
 请分析以下内容:
 1. 周期任务的描述
@@ -435,13 +416,13 @@ class AbilityAssessmentHandler:
                 {"role": "user", "content": prompt}
             ]
             
-            result, model = query_openai(messages)
+            result, model = query_ollama(messages)
             
             if "error" in result:
                 logging.error(f"计算任务完成度失败: {result['error']}")
                 return 0.0
             
-            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            content = result.get("message", {}).get("content", "")
             
             # 尝试从返回内容中提取数字
             import re
@@ -707,19 +688,19 @@ class AbilityAssessmentHandler:
 仅返回JSON格式内容，不要有其他文字说明。
 """
             
-            # 使用DeepSeek生成评估
+            # 使用Ollama生成评估
             messages = [
                 {"role": "system", "content": "你是一位专业的人才评估专家，擅长根据数据分析人才能力并给出评分和建议。"},
                 {"role": "user", "content": prompt}
             ]
             
-            result, model = query_openai(messages)
+            result, model = query_ollama(messages)
             
             if "error" in result:
-                Log.error(f"DeepSeek API调用失败: {result['error']}")
+                Log.error(f"Ollama API调用失败: {result['error']}")
                 return None
             
-            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            content = result.get("message", {}).get("content", "")
             
             # 提取JSON部分
             try:
@@ -745,7 +726,7 @@ class AbilityAssessmentHandler:
                     overall_score=assessment_result["overall"]["score"],
                     assessment_detail=assessment_result,
                     created_at=datetime.now(),
-                    model_used="deepseek-chat"
+                    model_used=OLLAMA_MODEL
                 )
                 
                 db.session.add(assessment)

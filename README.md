@@ -9,39 +9,51 @@
 - 通过远程 API 调用人工智能模型
 - 数据库迁移管理
 - 基本的 MVC 架构设计
+- 定时任务调度系统
+- 邮件和短信验证码功能
+- JWT 用户认证
 
 ## 目录结构
 ```
 ├── app/                  # 主应用目录
-│   ├── __init__.py       # Flask 应用初始化
-│   ├── models/           # 数据模型
-│   ├── views/            # 视图层
-│   ├── controllers/      # 控制器层
-│   └── static/           # 静态文件目录
-│   └── modules/          # 解耦化的模块
-├── config/               # 配置文件
-│   ├── development.py    # 开发环境配置
-│   ├── production.py     # 生产环境配置
-├── migrations/           # 数据库迁移目录
-├─public                  # 静态文件位置
-│  ├─user
-│  │  └─picture           # 用户头像
-│  └─www                  # 开发用控制台
-├── .env                  # 环境变量配置
-├── README.md             # 项目描述文件
-└── run.py                # 项目启动文件
+│   ├── __init__.py      # Flask 应用初始化
+│   ├── models/          # 数据模型
+│   ├── views/           # 视图层
+│   ├── controllers/     # 控制器层
+│   ├── modules/         # 功能模块（如定时任务等）
+│   └── utils/           # 工具函数
+├── config/              # 配置文件
+│   ├── development.py   # 开发环境配置
+│   ├── production.py    # 生产环境配置
+│   └── __init__.py      # 配置初始化
+├── migrations/          # 数据库迁移目录
+├── public/             # 静态资源目录
+│   ├── user/           # 用户相关资源
+│   │   └── picture/    # 用户头像
+│   ├── www/            # 开发用控制台
+│   ├── report/         # 报告文件
+│   └── honors/         # 荣誉证书等
+├── tests/              # 测试目录
+├── .env                # 环境变量配置
+├── .gitignore         # Git忽略文件
+├── requirements.txt    # 项目依赖
+└── run.py             # 项目启动文件
 ```
 
 ## 环境要求
-- Python 3.10
-- MySQL 8 或以上版本
+- Python 3.12
+- MySQL 8.0 或以上版本
+- 操作系统：Windows/Linux/MacOS
 
 ## 安装步骤
 
-1. 创建并激活 Conda 环境：
+1. 创建并激活虚拟环境：
    ```bash
-   conda create --name dcoa python=3.10
-   conda activate dcoa
+   python -m venv .venv
+   # Windows
+   .venv\\Scripts\\activate
+   # Linux/MacOS
+   source .venv/bin/activate
    ```
 
 2. 安装依赖：
@@ -49,27 +61,36 @@
    pip install -r requirements.txt
    ```
 
-3. 配置环境变量：在项目根目录下创建 `.env` 文件，并添加数据库及 API 相关的配置信息：
+3. 配置环境变量：在项目根目录下创建 `.env` 文件，并添加以下配置信息：
    ```bash
-    DATABASE_URL=
-    MYSQL_HOST=
-    MYSQL_USER=
-    MYSQL_PASSWORD=
-    MYSQL_DB=
-    JWT_SECRET_KEY=
-    SECRET_KEY=
-    TENCENTCLOUD_SECRET_ID=
-    TENCENTCLOUD_SECRET_KEY=
-    SMS_SDK_APP_ID=
-    SIGN_NAME=
-    TEMPLATE_ID=
-    EMAIL_SMTP=
-    EMAIL_ACCOUNT=
-    EMAIL_PASSWORD=
-    OPENAI_API_KEY=
+   # 数据库配置
+   DATABASE_URL=mysql://user:password@host/dbname
+   MYSQL_HOST=localhost
+   MYSQL_USER=root
+   MYSQL_PASSWORD=your_password
+   MYSQL_DB=oa
+
+   # JWT配置
+   JWT_SECRET_KEY=your_jwt_secret
+   SECRET_KEY=your_app_secret
+
+   # 腾讯云配置（短信服务）
+   TENCENTCLOUD_SECRET_ID=your_secret_id
+   TENCENTCLOUD_SECRET_KEY=your_secret_key
+   SMS_SDK_APP_ID=your_app_id
+   SIGN_NAME=your_sign_name
+   TEMPLATE_ID=your_template_id
+
+   # 邮件配置
+   EMAIL_SMTP=smtp.example.com
+   EMAIL_ACCOUNT=your_email
+   EMAIL_PASSWORD=your_password
+
+   # OpenAI配置
+   OPENAI_API_KEY=your_api_key
    ```
 
-4. 初始化数据库迁移：
+4. 初始化数据库：
    ```bash
    flask db init
    flask db migrate -m "Initial migration"
@@ -80,41 +101,60 @@
    ```bash
    python run.py
    ```
+   默认启动在 5002 端口
+
+## 主要依赖版本
+- Flask==3.1.0
+- Flask-JWT-Extended==4.7.1
+- Flask-SQLAlchemy==3.1.1
+- Flask-Migrate==4.0.7
+- Flask-Cors==5.0.0
+- APScheduler==3.11.0
+- SQLAlchemy==2.0.36
+- Pillow==11.0.0
+- python-dotenv==1.0.1
+- tencentcloud-sdk-python==3.0.1286
+- transformers==4.47.1
+
+## 定时任务
+项目包含两种类型的定时任务：
+- 周期性任务（PeriodTaskScheduler）
+- 每日任务（DailyTaskScheduler）
+
+## 常见问题
+1. **数据库连接失败**
+   - 检查 MySQL 服务是否正常运行
+   - 验证 .env 中的数据库配置是否正确
+   - 确保数据库用户具有适当权限
+
+2. **定时任务未执行**
+   - 检查日志文件（app.log）中的错误信息
+   - 确保应用以非调试模式运行（debug=False）
+
+3. **文件上传失败**
+   - 检查 public 目录的写入权限
+   - 确保上传目录存在且可写
+
+## 安全提示
+- 请妥善保管 .env 文件，不要将其提交到版本控制系统
+- 定期更新依赖包以修复潜在的安全漏洞
+- 在生产环境中使用 HTTPS
+- 定期更换 JWT 密钥
+
+## 许可证
+MIT License
+
+## 贡献指南
+1. Fork 本仓库
+2. 创建特性分支
+3. 提交更改
+4. 发起 Pull Request
 
 ## 远程 API 集成
 通过以下远程 API 实现与人工智能模型的交互（具体 API 信息根据使用情况进行补充）：
 - API 地址：`https://api.example.com`
 - 调用方式：`POST /api/v1/ai-model`
 - 请求参数：`{"input": "your input data"}`
-
-## 常见问题
-- **如何配置数据库？** 请确保在 `.env` 文件中正确配置数据库连接信息。
-- **如何修改项目环境配置？** 项目的配置文件位于 `config/` 目录下，根据环境选择合适的配置文件进行修改。
-
-## 未来计划
-- 添加更多的 AI API 功能
-- 添加更多单元测试
-
----
-
-###  `requirements.txt`
-
-项目中的必要依赖：
-
-```
-Flask
-Flask-MySQLdb
-Flask-Migrate
-flask_jwt_extended
-flask-bcrypt
-python-dotenv
-SQLAlchemy
-transformers 
-requests      
-pillow
-tencentcloud-sdk-python
-Flask-CORS
-```
 
 ## 接口文档
 ### `/auth` 接口
@@ -198,10 +238,5 @@ Flask-CORS
        "status": "OK"
      }
      ```
-
-
-
-
-
 
 ---

@@ -27,6 +27,9 @@ def period_task_init_scheduler(app):
             period_task_scheduler = PeriodTaskScheduler(app)
             period_task_scheduler.start_scheduler()
             
+            # 存储调度器实例到app对象
+            app.period_task_scheduler = period_task_scheduler
+            
             # 立即执行一次测试任务
             with app.app_context():
                 period_task_scheduler._test_scheduler()
@@ -42,6 +45,9 @@ def daily_task_init_scheduler(app):
         if not daily_task_scheduler:    
             daily_task_scheduler = DailyTaskScheduler(app)
             daily_task_scheduler.start_scheduler()
+            
+            # 存储调度器实例到app对象
+            app.daily_task_scheduler = daily_task_scheduler
             
             # 立即执行一次测试任务
             with app.app_context():
