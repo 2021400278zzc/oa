@@ -17,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
     JSON,
+    Boolean,
 )
 
 from app.modules.sql import db
@@ -51,6 +52,8 @@ class Member(db.Model):
     password = Column(String(255))  # hash化的密码，可选
     domain = Column(JSON, default=lambda: [])  # 擅长领域
     period_task_score = Column(Integer, default=0)  # 学期任务平均分
+    below_average_flag = Column(db.Boolean, nullable=False, default=False)  # 是否低于平均进度
+    below_average_last_check = Column(DateTime)  # 最后一次检查时间
     created_at = Column(DateTime, default=func.now())  # 创建时间
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())  # 更新时间
 

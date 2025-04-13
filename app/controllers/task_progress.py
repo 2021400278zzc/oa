@@ -12,15 +12,22 @@ from app.utils.logger import Log
 from app.utils.response import Response
 from app.utils.constant import LLMPrompt as LLM
 
-def evaluate_daily_progress(user_id: str, task_id: str, report_text: str) -> float:
+def evaluate_daily_progress(user_id: str, task_id: str, report_text: str, retry_count: int = 0) -> float:
     """使用Deepseek评估日报中的任务进度
     Args:
         user_id: 用户ID
         task_id: 周期任务ID
         report_text: 日报内容
+        retry_count: 重试次数
     Returns:
         float: 进度值（0-100）
     """
+    # 限制最大重试次数
+    MAX_RETRIES = 3
+    if retry_count >= MAX_RETRIES:
+        Log.error(f"达到最大重试次数 ({MAX_RETRIES})")
+        return 0.0
+
     try:
         # 获取周期任务信息
         task = PeriodTask.query.filter_by(task_id=task_id).first()
@@ -35,33 +42,40 @@ def evaluate_daily_progress(user_id: str, task_id: str, report_text: str) -> flo
         ).order_by(TaskProgress.progress_date.desc()).first()
 
         # 构建评估提示
-        prompt = f"""请根据以下信息评估今日工作在整个任务中的进度（返回0-100的数字）：
+        prompt = f"""作为一个专业的任务进度评估助手，请根据以下信息评估今日工作在整个任务中的进度。
 
-任务要求：{task.detail_task_requirements}
+任务要求：
+{task.detail_task_requirements}
 
 历史进度：{last_progress.progress_value if last_progress else 0}%
 
-今日工作内容：{report_text}
+今日工作内容：
+{report_text}
 
-请分析今日工作内容对完成整体任务的贡献，返回一个0-100的数字，表示当前的总体进度。
-注意：
-1. 进度只能增加或保持不变，不能降低
-2. 进度应该反映实际完成情况，不要过分乐观
-3. 如果今日工作对任务完成没有实质性推进，应该保持历史进度不变
+评估规则：
+1. 进度只能增加或保持不变，不能低于历史进度 {last_progress.progress_value if last_progress else 0}%
+2. 进度必须是0-100之间的数字
+3. 进度应该反映实际完成情况，不要过分乐观
+4. 如果今日工作对任务完成没有实质性推进，应该保持历史进度不变
+5. 评估时要考虑：
+   - 今日工作内容与任务要求的相关度
+   - 工作内容的完成质量
+   - 对整体任务目标的推进程度
 
-请直接返回进度数字（0-100），不需要其他解释。"""
+请直接返回一个0-100之间的数字作为当前总体进度，不需要其他解释。
+如果无法评估或工作内容与任务无关，请返回历史进度 {last_progress.progress_value if last_progress else 0}。"""
 
         # 使用Deepseek评估进度
-        progress_str = create_completion(
-            send_text=prompt,
-            user_id=user_id,
-            method="task",
-            model_type="deepseek",
-            temperature=0.3,
-            max_tokens=10
-        )
-
         try:
+            progress_str = create_completion(
+                send_text=prompt,
+                user_id=user_id,
+                method="task",
+                model_type="deepseek",
+                temperature=0.3,
+                max_tokens=10
+            )
+
             progress = float(progress_str.strip())
             # 确保进度在0-100之间
             progress = max(0, min(100, progress))
@@ -69,35 +83,168 @@ def evaluate_daily_progress(user_id: str, task_id: str, report_text: str) -> flo
             if last_progress:
                 progress = max(progress, last_progress.progress_value)
             return progress
-        except ValueError:
-            Log.error(f"无法解析进度值: {progress_str}")
+        except (ValueError, TypeError) as e:
+            Log.error(f"无法解析进度值: {progress_str}, 错误: {str(e)}")
+            if retry_count < MAX_RETRIES:
+                Log.info(f"尝试重试 ({retry_count + 1}/{MAX_RETRIES})")
+                return evaluate_daily_progress(user_id, task_id, report_text, retry_count + 1)
             return last_progress.progress_value if last_progress else 0.0
 
     except Exception as e:
         Log.error(f"评估进度时出错: {str(e)}")
+        if retry_count < MAX_RETRIES:
+            Log.info(f"尝试重试 ({retry_count + 1}/{MAX_RETRIES})")
+            return evaluate_daily_progress(user_id, task_id, report_text, retry_count + 1)
         return 0.0
 
-def update_task_progress(user_id: str, task_id: str, report_text: str) -> None:
+def update_task_progress(user_id: str, task_id: str, report_text: str) -> Response:
     """更新任务进度
     Args:
         user_id: 用户ID
         task_id: 周期任务ID
         report_text: 日报内容
+    Returns:
+        Response: 更新结果
     """
     try:
+        # 检查当前时间是否在早上5点
+        current_time = datetime.now()
+        if current_time.hour != 5:
+            return Response(Response.r.ERR_INVALID_REQUEST, 
+                          message="任务进度只能在每天早上5点更新",
+                          data={'current_time': current_time.strftime('%Y-%m-%d %H:%M:%S')})
+
+        # 检查用户是否存在
+        member = Member.query.filter_by(id=user_id).first()
+        if not member:
+            return Response(Response.r.ERR_NOT_FOUND, 
+                          message=f"找不到ID为{user_id}的用户")
+
+        # 检查任务是否存在
+        task = PeriodTask.query.filter_by(task_id=task_id).first()
+        if not task:
+            return Response(Response.r.ERR_NOT_FOUND, 
+                          message=f"找不到ID为{task_id}的周期任务")
+
+        # 检查任务是否在有效期内
+        today = current_time.date()
+        if today < task.start_time.date() or today > task.end_time.date():
+            return Response(Response.r.ERR_INVALID_REQUEST, 
+                          message="任务不在有效期内",
+                          data={
+                              'task_period': {
+                                  'start': task.start_time.date().isoformat(),
+                                  'end': task.end_time.date().isoformat()
+                              },
+                              'current_date': today.isoformat()
+                          })
+
         # 评估今日进度
-        progress_value = evaluate_daily_progress(user_id, task_id, report_text)
-        today = datetime.now().date()
+        try:
+            progress_value = evaluate_daily_progress(user_id, task_id, report_text)
+        except Exception as e:
+            Log.error(f"评估进度时出错: {str(e)}", exc_info=True)
+            return Response(Response.r.ERR_INTERNAL, 
+                          message=f"评估进度时出错: {str(e)}")
 
         # 更新或创建进度记录
-        progress = TaskProgress.query.filter_by(
+        try:
+            progress = TaskProgress.query.filter_by(
+                task_id=task_id,
+                user_id=user_id,
+                progress_date=today
+            ).first()
+
+            if progress:
+                # 更新现有记录
+                old_value = progress.progress_value
+                progress.progress_value = max(progress_value, old_value)  # 确保进度只能增加或保持不变
+                action = "更新"
+            else:
+                # 创建新记录
+                progress = TaskProgress(
+                    task_id=task_id,
+                    user_id=user_id,
+                    progress_date=today,
+                    progress_value=progress_value
+                )
+                db.session.add(progress)
+                action = "创建"
+
+            db.session.commit()
+            
+            return Response(Response.r.OK, data={
+                'task_id': task_id,
+                'user_id': user_id,
+                'progress_date': today.isoformat(),
+                'progress_value': progress.progress_value,
+                'action': action,
+                'update_time': current_time.isoformat()
+            })
+
+        except Exception as e:
+            db.session.rollback()
+            Log.error(f"保存进度记录时出错: {str(e)}", exc_info=True)
+            return Response(Response.r.ERR_INTERNAL, 
+                          message=f"保存进度记录时出错: {str(e)}")
+
+    except Exception as e:
+        Log.error(f"更新任务进度时出错: {str(e)}", exc_info=True)
+        return Response(Response.r.ERR_INTERNAL, 
+                      message=f"更新任务进度时出错: {str(e)}")
+
+def create_task_progress(user_id: str, task_id: str, report_text: str) -> Response:
+    """创建任务进度记录（仅用于管理员强制创建）
+    Args:
+        user_id: 用户ID
+        task_id: 周期任务ID
+        report_text: 日报内容
+    Returns:
+        Response: 创建结果
+    """
+    try:
+        # 检查用户是否存在
+        member = Member.query.filter_by(id=user_id).first()
+        if not member:
+            return Response(Response.r.ERR_NOT_FOUND, 
+                          message=f"找不到ID为{user_id}的用户")
+
+        # 检查任务是否存在
+        task = PeriodTask.query.filter_by(task_id=task_id).first()
+        if not task:
+            return Response(Response.r.ERR_NOT_FOUND, 
+                          message=f"找不到ID为{task_id}的周期任务")
+
+        current_time = datetime.now()
+        today = current_time.date()
+
+        # 检查今日是否已有进度记录
+        existing_progress = TaskProgress.query.filter_by(
             task_id=task_id,
+            user_id=user_id,
             progress_date=today
         ).first()
 
-        if progress:
-            progress.progress_value = progress_value
-        else:
+        if existing_progress:
+            return Response(Response.r.ERR_INVALID_REQUEST, 
+                          message="今日已有进度记录",
+                          data={
+                              'existing_progress': {
+                                  'progress_value': existing_progress.progress_value,
+                                  'created_at': existing_progress.created_at.isoformat()
+                              }
+                          })
+
+        # 评估进度
+        try:
+            progress_value = evaluate_daily_progress(user_id, task_id, report_text)
+        except Exception as e:
+            Log.error(f"评估进度时出错: {str(e)}", exc_info=True)
+            return Response(Response.r.ERR_INTERNAL, 
+                          message=f"评估进度时出错: {str(e)}")
+
+        # 创建新记录
+        try:
             progress = TaskProgress(
                 task_id=task_id,
                 user_id=user_id,
@@ -105,12 +252,26 @@ def update_task_progress(user_id: str, task_id: str, report_text: str) -> None:
                 progress_value=progress_value
             )
             db.session.add(progress)
+            db.session.commit()
 
-        db.session.commit()
+            return Response(Response.r.OK, data={
+                'task_id': task_id,
+                'user_id': user_id,
+                'progress_date': today.isoformat(),
+                'progress_value': progress_value,
+                'created_at': progress.created_at.isoformat()
+            })
+
+        except Exception as e:
+            db.session.rollback()
+            Log.error(f"保存进度记录时出错: {str(e)}", exc_info=True)
+            return Response(Response.r.ERR_INTERNAL, 
+                          message=f"保存进度记录时出错: {str(e)}")
 
     except Exception as e:
-        db.session.rollback()
-        Log.error(f"更新任务进度时出错: {str(e)}")
+        Log.error(f"创建任务进度时出错: {str(e)}", exc_info=True)
+        return Response(Response.r.ERR_INTERNAL, 
+                      message=f"创建任务进度时出错: {str(e)}")
 
 def get_progress_history(task_id: str, start_date: datetime, end_date: datetime) -> Response:
     """获取指定时间段的任务进度历史
@@ -197,16 +358,16 @@ def get_department_progress(department_id: str, start_date: datetime, end_date: 
     """
     try:
         # 验证部门是否存在
-        department = Department.query.filter_by(department_id=department_id).first()
+        department = Department.query.filter_by(id=department_id).first()
         if not department:
             return Response(Response.r.ERR_NOT_FOUND, message="找不到指定的部门")
 
         # 获取部门所有成员
-        members = Member.query.filter_by(department_id=department_id).all()
+        members = Member.query.filter_by(department_id=department.id).all()
         if not members:
             return Response(Response.r.ERR_NOT_FOUND, message="该部门没有成员")
 
-        member_ids = [member.user_id for member in members]
+        member_ids = [member.id for member in members]
 
         # 获取时间范围内的所有进度记录
         progress_records = TaskProgress.query.filter(
@@ -274,68 +435,150 @@ def notify_below_average_members(department_id: str) -> Response:
         Response: 通知结果
     """
     try:
+        Log.info(f"开始处理部门ID: {department_id}")
+        
         # 验证部门是否存在
-        department = Department.query.filter_by(department_id=department_id).first()
+        department = Department.query.filter_by(id=department_id).first()
         if not department:
-            return Response(Response.r.ERR_NOT_FOUND, message="找不到指定的部门")
+            error_msg = f"找不到ID为{department_id}的部门"
+            Log.error(error_msg)
+            return Response(Response.r.ERR_NOT_FOUND, message=error_msg)
+
+        Log.info(f"找到部门: {department.name}")
 
         # 获取部门所有成员
-        members = Member.query.filter_by(department_id=department_id).all()
-        if not members:
-            return Response(Response.r.ERR_NOT_FOUND, message="该部门没有成员")
+        try:
+            members = Member.query.filter_by(department_id=department.id).all()
+            Log.info(f"部门 {department.name} 查询到 {len(members)} 名成员")
+        except Exception as e:
+            error_msg = f"查询部门 {department.name} 的成员时出错: {str(e)}"
+            Log.error(error_msg, exc_info=True)
+            return Response(Response.r.ERR_INTERNAL, message=error_msg)
 
-        member_ids = [member.user_id for member in members]
+        if not members:
+            error_msg = f"部门 {department.name} 没有成员"
+            Log.info(error_msg)  # 这是一个正常的业务情况，使用info级别
+            return Response(Response.r.ERR_NOT_FOUND, message=error_msg)
+
+        member_ids = [member.id for member in members]
         today = datetime.now().date()
+        Log.info(f"开始查询 {len(member_ids)} 名成员的今日进度记录")
 
         # 获取今日的所有进度记录
-        progress_records = TaskProgress.query.filter(
-            TaskProgress.user_id.in_(member_ids),
-            TaskProgress.progress_date == today
-        ).all()
+        try:
+            progress_records = TaskProgress.query.filter(
+                TaskProgress.user_id.in_(member_ids),
+                TaskProgress.progress_date == today
+            ).all()
+            Log.info(f"查询到 {len(progress_records)} 条进度记录")
+        except Exception as e:
+            error_msg = f"查询部门 {department.name} 的进度记录时出错: {str(e)}"
+            Log.error(error_msg, exc_info=True)
+            return Response(Response.r.ERR_INTERNAL, message=error_msg)
+
+        # 重置所有成员的标记状态
+        error_members = []
+        for member in members:
+            try:
+                member.below_average_flag = False
+                member.below_average_last_check = datetime.now()
+            except Exception as e:
+                error_msg = f"重置成员 {member.name} ({member.id}) 的标记状态时出错: {str(e)}"
+                Log.error(error_msg, exc_info=True)
+                error_members.append(member.name)
+
+        if error_members:
+            error_msg = f"以下成员的标记状态重置失败: {', '.join(error_members)}"
+            Log.error(error_msg)
+            return Response(Response.r.ERR_INTERNAL, message=error_msg)
 
         if not progress_records:
+            try:
+                db.session.commit()
+                Log.info(f"成功重置部门 {department.name} 所有成员的标记状态")
+            except Exception as e:
+                db.session.rollback()
+                error_msg = f"保存成员标记状态时出错: {str(e)}"
+                Log.error(error_msg, exc_info=True)
+                return Response(Response.r.ERR_INTERNAL, message=error_msg)
+            
             return Response(Response.r.OK, data={
                 'department_id': department_id,
                 'department_name': department.name,
                 'below_average_members': [],
+                'total_members': len(members),
+                'members_with_progress': 0,
                 'message': "今日暂无进度记录"
             })
 
-        # 计算部门平均进度
-        progress_values = [r.progress_value for r in progress_records]
-        avg_progress = sum(progress_values) / len(progress_values)
+        try:
+            # 计算部门平均进度
+            progress_values = [r.progress_value for r in progress_records]
+            avg_progress = sum(progress_values) / len(progress_values)
+            Log.info(f"部门 {department.name} 的平均进度: {avg_progress:.2f}%")
+        except Exception as e:
+            error_msg = f"计算部门 {department.name} 的平均进度时出错: {str(e)}"
+            Log.error(error_msg, exc_info=True)
+            return Response(Response.r.ERR_INTERNAL, message=error_msg)
 
         # 找出低于平均进度的成员
         below_average_members = []
-        for record in progress_records:
-            if record.progress_value < avg_progress:
-                member = next((m for m in members if m.user_id == record.user_id), None)
-                if member:
+        error_members = []
+        for member in members:
+            try:
+                # 获取成员今日进度
+                member_progress = next((r for r in progress_records if r.user_id == member.id), None)
+                
+                # 更新成员标记状态
+                if member_progress and member_progress.progress_value < avg_progress:
                     below_average_members.append({
-                        'user_id': member.user_id,
+                        'user_id': member.id,
                         'name': member.name,
-                        'progress': record.progress_value,
-                        'gap': round(avg_progress - record.progress_value, 2)
+                        'progress': member_progress.progress_value,
+                        'gap': round(avg_progress - member_progress.progress_value, 2)
                     })
-
-                    # 更新成员的标记状态（假设Member模型有below_average_flag字段）
                     member.below_average_flag = True
-                    
-        # 保存更改
-        db.session.commit()
+                else:
+                    member.below_average_flag = False
+                
+                member.below_average_last_check = datetime.now()
+            except Exception as e:
+                error_msg = f"处理成员 {member.name} ({member.id}) 的进度时出错: {str(e)}"
+                Log.error(error_msg, exc_info=True)
+                error_members.append(member.name)
 
-        return Response(Response.r.OK, data={
+        if error_members:
+            error_msg = f"以下成员的进度处理失败: {', '.join(error_members)}"
+            Log.error(error_msg)
+            return Response(Response.r.ERR_INTERNAL, message=error_msg)
+
+        try:
+            # 保存更改
+            db.session.commit()
+            Log.info(f"成功保存部门 {department.name} 的进度检查结果")
+        except Exception as e:
+            db.session.rollback()
+            error_msg = f"保存部门 {department.name} 的进度检查结果时出错: {str(e)}"
+            Log.error(error_msg, exc_info=True)
+            return Response(Response.r.ERR_INTERNAL, message=error_msg)
+
+        result_data = {
             'department_id': department_id,
             'department_name': department.name,
             'average_progress': round(avg_progress, 2),
             'below_average_members': below_average_members,
+            'total_members': len(members),
+            'members_with_progress': len(progress_records),
             'notification_time': datetime.now().isoformat()
-        })
+        }
+        Log.info(f"部门 {department.name} 的进度检查完成: {result_data}")
+        return Response(Response.r.OK, data=result_data)
 
     except Exception as e:
         db.session.rollback()
-        Log.error(f"通知低于平均进度成员时出错: {str(e)}")
-        return Response(Response.r.ERR_INTERNAL, message=str(e))
+        error_msg = f"通知低于平均进度成员时出错: {str(e)}"
+        Log.error(error_msg, exc_info=True)
+        return Response(Response.r.ERR_INTERNAL, message=error_msg)
 
 def get_below_average_members(department_id: str) -> Response:
     """获取部门中被标记为低于平均进度的成员列表
@@ -346,13 +589,13 @@ def get_below_average_members(department_id: str) -> Response:
     """
     try:
         # 验证部门是否存在
-        department = Department.query.filter_by(department_id=department_id).first()
+        department = Department.query.filter_by(id=department_id).first()
         if not department:
             return Response(Response.r.ERR_NOT_FOUND, message="找不到指定的部门")
 
         # 获取被标记的成员
         marked_members = Member.query.filter_by(
-            department_id=department_id,
+            department_id=department.id,
             below_average_flag=True
         ).all()
 
@@ -360,11 +603,11 @@ def get_below_average_members(department_id: str) -> Response:
         for member in marked_members:
             # 获取成员最新的进度记录
             latest_progress = TaskProgress.query.filter_by(
-                user_id=member.user_id
+                user_id=member.id
             ).order_by(TaskProgress.progress_date.desc()).first()
 
             members_info.append({
-                'user_id': member.user_id,
+                'user_id': member.id,
                 'name': member.name,
                 'latest_progress': latest_progress.progress_value if latest_progress else 0.0,
                 'last_update': latest_progress.progress_date.isoformat() if latest_progress else None

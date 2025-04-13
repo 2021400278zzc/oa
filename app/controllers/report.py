@@ -160,7 +160,7 @@ def create_report(
                 send_images=picture_paths,     # 添加图片路径
                 dictionary_like=True,
                 response_format=LLMS.DailyReport,
-                model_type="deepseek"
+                model_name="deepseek-chat"     # 更新参数名
             )
 
             # 创建新的日报记录，包含评价信息和所有关联的任务ID

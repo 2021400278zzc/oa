@@ -35,18 +35,8 @@ def create_app() -> Flask:
     db.init_app(app)
     migrate.init_app(app, db)
     
-    # 注册蓝图
-    from app.views.auth import auth_bp
-    from app.views.task import task_bp
-    from app.views.daily_task import daily_task_bp
-    from app.views.daily_report import daily_report_bp
-    from app.views.task_progress import task_progress_bp
-    
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(task_bp)
-    app.register_blueprint(daily_task_bp)
-    app.register_blueprint(daily_report_bp)
-    app.register_blueprint(task_progress_bp)
+    # 注册所有蓝图
+    register_blueprints(app)
 
     # 获取项目根目录路径
     root_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

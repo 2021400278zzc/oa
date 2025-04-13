@@ -315,4 +315,164 @@ def direct_run_progress_notification(user_id: str):
             "message": f"直接执行进度通知发送失败: {str(e)}",
             "data": None,
             "status": "ERROR"
+        }), 500
+
+@scheduler_bp.route('/direct/force-progress-check', methods=['POST'])
+@require_role(D.admin, D.leader)  # 只允许管理员和组长访问
+def direct_force_progress_check(user_id: str):
+    """强制执行进度检查和更新逻辑（不受时间限制），仅供管理员和组长使用"""
+    try:
+        # 直接创建ProgressNotificationScheduler实例并使用其核心方法
+        from app.modules.sched.progress_notification_sched import ProgressNotificationScheduler
+        from flask import current_app
+        from datetime import datetime
+        
+        app = current_app._get_current_object()
+        # 创建临时实例，但不启动调度器
+        temp_scheduler = ProgressNotificationScheduler(app)
+        
+        # 直接执行进度检查和更新逻辑
+        with app.app_context():
+            success = temp_scheduler.run_check_and_notification_now()
+        
+        if success:
+            return jsonify({
+                "code": Response.r.OK,
+                "message": "强制执行进度检查和更新成功",
+                "data": {
+                    "executed_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "check_type": "force"
+                },
+                "status": "OK"
+            })
+        else:
+            return jsonify({
+                "code": Response.r.ERR_INTERNAL,
+                "message": "强制执行进度检查和更新失败",
+                "data": None,
+                "status": "ERROR"
+            }), 500
+            
+    except Exception as e:
+        logging.error(f"强制执行进度检查和更新失败: {str(e)}")
+        return jsonify({
+            "code": Response.r.ERR_INTERNAL,
+            "message": f"强制执行进度检查和更新失败: {str(e)}",
+            "data": None,
+            "status": "ERROR"
+        }), 500
+
+@scheduler_bp.route('/direct/batch-progress-update', methods=['POST'])
+@require_role(D.admin)  # 只允许管理员访问
+def direct_run_batch_progress_update(user_id: str):
+    """直接执行批量进度更新逻辑，不依赖调度器实例"""
+    try:
+        from app.modules.sched.progress_notification_sched import ProgressNotificationScheduler
+        from flask import current_app, request
+        
+        # 获取请求参数
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "code": Response.r.ERR_INVALID_ARGUMENT,
+                "message": "缺少请求数据",
+                "data": None,
+                "status": "ERROR"
+            }), 400
+
+        task_id = data.get('task_id')
+        report_text = data.get('report_text')
+        department_id = data.get('department_id')  # 可选参数
+
+        if not task_id:
+            return jsonify({
+                "code": Response.r.ERR_INVALID_ARGUMENT,
+                "message": "缺少task_id参数",
+                "data": None,
+                "status": "ERROR"
+            }), 400
+
+        if not report_text:
+            report_text = f"管理员手动更新 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 的任务进度"
+
+        app = current_app._get_current_object()
+        # 创建临时实例，但不启动调度器
+        temp_scheduler = ProgressNotificationScheduler(app)
+        
+        # 直接执行批量进度更新逻辑
+        with app.app_context():
+            result = temp_scheduler.run_batch_update_now(
+                task_id=task_id,
+                report_text=report_text,
+                department_id=department_id
+            )
+        
+        if result.get('success', False):
+            return jsonify({
+                "code": Response.r.OK,
+                "message": "直接执行批量进度更新成功",
+                "data": {
+                    "executed_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "result": result
+                },
+                "status": "OK"
+            })
+        else:
+            return jsonify({
+                "code": Response.r.ERR_INTERNAL,
+                "message": result.get('message', '批量进度更新失败'),
+                "data": result,
+                "status": "ERROR"
+            }), 500
+            
+    except Exception as e:
+        logging.error(f"直接执行批量进度更新失败: {str(e)}")
+        return jsonify({
+            "code": Response.r.ERR_INTERNAL,
+            "message": f"直接执行批量进度更新失败: {str(e)}",
+            "data": None,
+            "status": "ERROR"
+        }), 500
+
+@scheduler_bp.route('/direct/batch-progress-update-all', methods=['POST'])
+@require_role(D.admin)  # 只允许管理员访问
+def direct_run_batch_progress_update_all(user_id: str):
+    """直接执行所有活跃任务的批量进度更新逻辑，不依赖调度器实例"""
+    try:
+        from app.modules.sched.progress_notification_sched import ProgressNotificationScheduler
+        from flask import current_app
+        
+        app = current_app._get_current_object()
+        # 创建临时实例，但不启动调度器
+        temp_scheduler = ProgressNotificationScheduler(app)
+        
+        # 直接执行批量进度更新逻辑
+        with app.app_context():
+            success = temp_scheduler.batch_update_all_departments_progress()
+        
+        if success:
+            return jsonify({
+                "code": Response.r.OK,
+                "message": "直接执行所有活跃任务的批量进度更新成功",
+                "data": {
+                    "executed_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "update_type": "all_active_tasks"
+                },
+                "status": "OK"
+            })
+        else:
+            return jsonify({
+                "code": Response.r.ERR_INTERNAL,
+                "message": "执行所有活跃任务的批量进度更新失败",
+                "data": None,
+                "status": "ERROR"
+            }), 500
+            
+    except Exception as e:
+        logging.error(f"直接执行所有活跃任务的批量进度更新失败: {str(e)}")
+        return jsonify({
+            "code": Response.r.ERR_INTERNAL,
+            "message": f"直接执行所有活跃任务的批量进度更新失败: {str(e)}",
+            "data": None,
+            "status": "ERROR"
         }), 500 
