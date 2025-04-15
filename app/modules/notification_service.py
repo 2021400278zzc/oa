@@ -38,6 +38,31 @@ class NotificationService:
             创建的通知对象，如果失败则返回None
         """
         try:
+            # 获取当天的开始时间
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            tomorrow = today.replace(hour=23, minute=59, second=59)
+            
+            # 检查是否已存在同类型的通知
+            existing_notification = Notification.query.filter(
+                Notification.receiver_id == receiver_id,
+                Notification.notification_type == notification_type,
+                Notification.created_at >= today,
+                Notification.created_at <= tomorrow
+            ).first()
+            
+            # 如果已存在同类型通知，则更新内容而不是创建新通知
+            if existing_notification:
+                existing_notification.title = title
+                existing_notification.content = content
+                existing_notification.resource_id = resource_id
+                existing_notification.is_read = False  # 重置为未读
+                existing_notification.created_at = datetime.now()  # 更新时间
+                
+                db.session.commit()
+                logging.info(f"更新用户 {receiver_id} 已存在的类型为 {notification_type.value} 的通知")
+                return existing_notification
+            
+            # 不存在则创建新通知
             notification = Notification(
                 receiver_id=receiver_id,
                 notification_type=notification_type,
@@ -189,7 +214,7 @@ class NotificationService:
             # 获取任务详情
             task_date = task.task_date.strftime('%Y-%m-%d')
             
-            # 创建通知
+            # 检查是否已存在类似通知，若存在则更新，不存在则创建
             NotificationService.create_notification(
                 receiver_id=task.assignee_id,
                 notification_type=NotificationType.DAILY_TASK_CREATED,
@@ -211,7 +236,7 @@ class NotificationService:
             # 当前日期
             today = datetime.now().strftime('%Y-%m-%d')
             
-            # 为每个成员创建通知
+            # 为每个成员创建或更新通知
             for member in members:
                 NotificationService.create_notification(
                     receiver_id=member.id,

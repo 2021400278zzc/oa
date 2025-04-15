@@ -149,6 +149,93 @@ def get_conversation_messages(user_id: str, session_id: str):
             "data": None
         }), 500
 
+@gpt_bp.route('/conversation/<session_id>/limited_messages', methods=['GET'])
+@require_role(D.admin, D.leader, D.sub_leader)
+def get_limited_conversation_messages(user_id: str, session_id: str):
+    """获取单个会话的部分对话内容，默认返回最近的2条信息对"""
+    try:
+        # 获取查询参数，默认返回最近的2条消息对（4条消息）
+        limit = request.args.get('limit', default=1, type=int)
+        
+        # 查询指定会话的所有消息，按创建时间排序
+        all_messages = (
+            Gpt.query
+            .filter_by(session_id=session_id, user_id=user_id)
+            .order_by(Gpt.created_at)  # 按时间顺序排列
+            .all()
+        )
+
+        # 获取会话信息
+        first_message = next((m for m in all_messages if m.role == 'user'), None)
+        conversation_title = first_message.message[:50] + "..." if first_message and len(first_message.message) > 50 else "New Chat"
+
+        # 格式化消息，按照每组对话整理
+        formatted_messages = []
+        messages_dict = {}
+        
+        # 首先按照创建时间分组消息
+        for msg in all_messages:
+            created_at = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            if created_at not in messages_dict:
+                messages_dict[created_at] = {'user': None, 'assistant': None}
+            
+            if msg.role == 'user':
+                messages_dict[created_at]['user'] = {
+                    "id": msg.id,
+                    "role": "user",
+                    "content": msg.message,
+                    "created_at": created_at
+                }
+            elif msg.role == 'assistant':
+                messages_dict[created_at]['assistant'] = {
+                    "id": msg.id,
+                    "role": "assistant",
+                    "content": msg.message,
+                    "created_at": created_at,
+                    "model": "deepseek-chat"
+                }
+
+        # 过滤出完整的消息对（同时包含用户消息和助手回复）
+        complete_timestamps = [ts for ts in messages_dict if messages_dict[ts]['user'] and messages_dict[ts]['assistant']]
+        complete_timestamps.sort()  # 按时间顺序排序
+        
+        # 获取最后limit个完整对话的时间戳
+        # 如果limit大于实际完整对话数，则返回所有完整对话
+        limited_timestamps = complete_timestamps[-limit:] if limit < len(complete_timestamps) else complete_timestamps
+        
+        # 只添加完整的消息对
+        for timestamp in limited_timestamps:
+            pair = messages_dict[timestamp]
+            formatted_messages.append(pair['user'])
+            formatted_messages.append(pair['assistant'])
+
+        # 构造会话数据
+        conversation_data = {
+            "id": session_id,
+            "title": conversation_title,
+            "created_at": all_messages[0].created_at.strftime("%Y-%m-%d %H:%M:%S") if all_messages else "",
+            "updated_at": all_messages[-1].created_at.strftime("%Y-%m-%d %H:%M:%S") if all_messages else "",
+            "messages": formatted_messages,
+            "total_messages": len(all_messages),
+            "returned_message_pairs": len(limited_timestamps),
+            "total_complete_pairs": len(complete_timestamps)
+        }
+
+        return jsonify({
+            "code": Response.r.OK,
+            "message": "success",
+            "data": conversation_data,
+            "status": "OK"
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting limited conversation messages: {str(e)}")
+        return jsonify({
+            "code": Response.r.ERR_INTERNAL,
+            "message": str(e),
+            "data": None
+        }), 500
+
 @gpt_bp.route('/conversation/<session_id>/title', methods=['PUT'])
 @require_role(D.admin, D.leader, D.sub_leader)
 def update_conversation_title(user_id: str, session_id: str):

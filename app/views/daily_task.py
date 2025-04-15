@@ -153,6 +153,17 @@ def section_get_tasks_view(user_id: str) -> Response:
             DailyTask.task_date < day_end
         ).all()
         
+        print(f"DEBUG - section_get_tasks: date={date.strftime('%Y-%m-%d')}, user_id={target_user_id}, tasks_count={len(daily_tasks)}")
+        
+        # 如果没有任务，返回今日任务未生成的消息
+        if not daily_tasks:
+            print(f"DEBUG - No tasks found for date {date.strftime('%Y-%m-%d')}, returning empty list")
+            return Response(Response.r.OK, message="今日任务未生成", data={
+                "total_tasks": 0,
+                "tasks": [],
+                "date": date.strftime('%Y-%m-%d')
+            }).response()
+        
         # 检查是否有日报
         has_report = DailyReport.query.filter(
             DailyReport.user_id == user_id,

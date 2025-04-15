@@ -55,6 +55,7 @@ class ResponseConstant:
         ERR_EXPIRED = "ERR.EXP"
         ERR_INTERNAL = "ERR.INTERNAL"
         ERR_INVALID_ARGUMENT = "ERR.ARG"
+        ERR_INVALID_REQUEST = "ERR.INVALID_REQUEST"
         ERR_NOT_FOUND = "ERR.NOT_FOUND"
         ERR_SQL = "ERR.SQL"
         ERR_TOO_MUCH_TIME = "ERR.LIMIT"
@@ -72,6 +73,7 @@ class ResponseConstant:
         ERR_EXPIRED = 410
         ERR_INTERNAL = 500
         ERR_INVALID_ARGUMENT = 400
+        ERR_INVALID_REQUEST = 400
         ERR_NOT_FOUND = 404
         ERR_SQL = 503
         ERR_TOO_MUCH_TIME = 429
@@ -89,6 +91,7 @@ class ResponseConstant:
         ERR_EXPIRED = "请求中包含过期的内容"
         ERR_INTERNAL = "内部错误"
         ERR_INVALID_ARGUMENT = "传入了错误的参数"
+        ERR_INVALID_REQUEST = "无效的请求"
         ERR_NOT_FOUND = "项未找到"
         ERR_SQL = "由于数据库操作时出现问题而造成的错误"
         ERR_TOO_MUCH_TIME = "太多次请求"

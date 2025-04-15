@@ -13,7 +13,7 @@ class TaskProgress(db.Model):
     __tablename__ = 'task_progress'
 
     id = Column(Integer, primary_key=True)
-    task_id = Column(String(20), ForeignKey('period_tasks.task_id', ondelete='CASCADE'), nullable=False)
+    task_id = Column(String(36), ForeignKey('period_tasks.task_id', ondelete='CASCADE'), nullable=False)
     user_id = Column(String(20), ForeignKey('members.id', ondelete='CASCADE'), nullable=False)
     progress_date = Column(Date, nullable=False)
     progress_value = Column(Float, nullable=False, default=0.0)  # 进度值（0-100）
@@ -24,9 +24,9 @@ class TaskProgress(db.Model):
     user = relationship('Member', backref='progress_records', foreign_keys=[user_id])
     task = relationship('PeriodTask', backref='progress_records', foreign_keys=[task_id])
 
-    # 联合唯一约束，确保每个任务每天只有一个进度记录
+    # 联合唯一约束，确保每个用户每个任务每天只有一个进度记录
     __table_args__ = (
-        UniqueConstraint('task_id', 'progress_date', name='uix_task_date'),
+        UniqueConstraint('task_id', 'user_id', 'progress_date', name='uix_task_user_date'),
     )
 
     def to_dict(self):

@@ -11,7 +11,7 @@ from app.utils.response import Response
 from app.modules.sql import db
 
 def get_previous_task_status(assignee_id: str, period_task_id: str) -> Dict:
-    """获取前一天的任务完成情况
+    """获取最近一天的任务完成情况
     Args:
         assignee_id: 用户ID
         period_task_id: 周期任务ID
@@ -19,17 +19,15 @@ def get_previous_task_status(assignee_id: str, period_task_id: str) -> Dict:
         Dict: 包含任务完成状态和详情
     """
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    yesterday = today - timedelta(days=1)
     
-    # 获取前一天的任务
-    previous_task = DailyTask.query.filter(
+    # 获取最近一天的任务（而不仅仅是前一天）
+    latest_task = DailyTask.query.filter(
         DailyTask.assignee_id == assignee_id,
-        DailyTask.task_date >= yesterday,
         DailyTask.task_date < today,
         DailyTask.period_task_id == period_task_id
-    ).first()
+    ).order_by(DailyTask.task_date.desc()).first()
     
-    if not previous_task:
+    if not latest_task:
         return {
             "has_task": False,
             "completed": False,
@@ -37,21 +35,25 @@ def get_previous_task_status(assignee_id: str, period_task_id: str) -> Dict:
             "report_content": None
         }
     
-    # 检查前一天是否有日报
-    previous_report = DailyReport.query.filter(
+    # 检查最近一天的任务日期是否有日报
+    task_day = latest_task.task_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    next_day = task_day + timedelta(days=1)
+    
+    # 检查该任务日期是否有日报
+    latest_report = DailyReport.query.filter(
         DailyReport.user_id == assignee_id,
-        DailyReport.created_at >= yesterday,
-        DailyReport.created_at < today
+        DailyReport.created_at >= task_day,
+        DailyReport.created_at < next_day
     ).first()
     
     return {
         "has_task": True,
-        "completed": bool(previous_report),
+        "completed": bool(latest_report),
         "task_content": {
-            "basic": previous_task.basic_task_requirements,
-            "detail": previous_task.detail_task_requirements
+            "basic": latest_task.basic_task_requirements,
+            "detail": latest_task.detail_task_requirements
         },
-        "report_content": previous_report.report_text if previous_report else None
+        "report_content": latest_report.report_text if latest_report else None
     }
 
 @Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
@@ -94,48 +96,134 @@ def generate_daily_task_from_period(period_task_id: str, assigner_id: str, retur
        previous_status = get_previous_task_status(period_task.assignee_id, period_task_id)
        
        if previous_status["has_task"] and not previous_status["completed"]:
-           # 如果前一天任务未完成，直接使用前一天的任务内容
+           # 如果最近一天任务未完成，直接使用最近一天的任务内容
            basic_task = previous_status["task_content"]["basic"]
            detail_task = previous_status["task_content"]["detail"]
            is_continued = True
        else:
-           # 如果前一天任务已完成或没有前一天任务，生成新任务
+           # 如果最近一天任务已完成或没有最近一天任务，根据周期任务和最近一天的每日任务生成新任务
            # 构建GPT提示
            prompt = f"""
-分析周期任务信息并根据前一天的完成情况生成今日任务计划：
+分析周期任务信息并根据最近一天的完成情况生成今日任务计划：
 
 周期任务详细要求：
 {period_task.detail_task_requirements}
 
-前一天任务完成情况：
-{"暂无前一天任务" if not previous_status["has_task"] else f'''
+最近一天任务完成情况：
+{"暂无历史任务记录" if not previous_status["has_task"] else f'''
 任务内容：{previous_status["task_content"]["detail"]}
 完成状态：{"已完成" if previous_status["completed"] else "未完成"}
 完成报告：{previous_status["report_content"] if previous_status["report_content"] else "无"}
 '''}
 
 请根据以上信息生成今日任务计划，要求：
-1. 任务内容要基于前一天的学习进度和完成情况
-2. 确保任务连贯性，新任务应该是前一天任务的自然延续
+1. 任务内容要基于最近一天的学习进度和完成情况
+2. 确保任务连贯性，新任务应该是最近一天任务的自然延续
 3. 任务难度要循序渐进
 4. 任务内容要符合周期任务的整体目标
 
-请生成：
-1. 今日任务概要（一句话总结）
-2. 详细的任务步骤和要求（包括具体的学习内容和预期完成标准）
+请使用以下格式生成任务：
+1. 首先生成一个简短的"今日任务概要"（一句话总结，不要使用JSON格式）
+2. 然后空两行
+3. 接着提供详细的任务步骤和要求（包括具体的学习内容和预期完成标准）
+
+示例格式：
+今日任务概要：开始学习Python基础语法，掌握基本数据类型和变量声明
+
+
+详细任务内容：
+1. **Python环境设置**
+   - 下载并安装Python 3.10或更高版本
+   - 配置开发环境，推荐使用VS Code或PyCharm
+
+2. **基本语法学习**
+   - 学习变量声明和基本数据类型
+   - 掌握条件语句和循环结构
+   - 完成5个基础练习题
+
+请严格按照上述格式输出，不要添加额外的JSON格式或其他解释内容。
 """
            # 使用GPT生成任务内容
            task_content = create_completion(prompt, assigner_id, "task")
            
+           # 记录原始返回内容
+           Log.info(f"LLM任务生成原始返回内容: {task_content[:500]}...")
+           
            # 解析GPT返回的内容
            try:
-               parts = task_content.split('\n\n', 1)
-               basic_task = parts[0].strip()
-               detail_task = parts[1].strip() if len(parts) > 1 else task_content
+               # 检查返回的内容是否是JSON格式
+               if isinstance(task_content, dict):
+                   # 如果已经是字典，可能是LLM模块直接返回了JSON对象
+                   Log.info("LLM返回了字典格式的数据")
+                   if 'basic' in task_content and 'review' in task_content['basic']:
+                       basic_task = task_content['basic']['review']
+                       # 将字典转换为格式化的JSON字符串
+                       import json
+                       detail_task = json.dumps(task_content, ensure_ascii=False, indent=2)
+                   else:
+                       # 无法识别的字典格式
+                       basic_task = "今日任务计划"
+                       detail_task = str(task_content)
+               elif isinstance(task_content, str):
+                   Log.info("LLM返回了字符串格式的数据")
+                   if task_content.strip().startswith('{') or '```json' in task_content:
+                       # 可能包含JSON
+                       import json
+                       import re
+                       
+                       # 尝试提取JSON部分
+                       json_match = re.search(r'```json\s*(.*?)\s*```|(\{.*\})', task_content, re.DOTALL)
+                       if json_match:
+                           Log.info("从文本中提取到了JSON格式")
+                           json_str = json_match.group(1) if json_match.group(1) else json_match.group(2)
+                           try:
+                               json_data = json.loads(json_str)
+                               # 提取basic和review作为任务基本内容
+                               if 'basic' in json_data and 'review' in json_data['basic']:
+                                   basic_task = json_data['basic']['review']
+                               else:
+                                   basic_task = "今日任务计划"
+                               
+                               # 使用整个JSON作为详细任务
+                               detail_task = task_content
+                           except json.JSONDecodeError as e:
+                               Log.error(f"JSON解析失败: {str(e)}")
+                               # JSON解析失败，按普通文本处理
+                               parts = task_content.split('\n\n', 1)
+                               basic_task = parts[0].strip()
+                               detail_task = parts[1].strip() if len(parts) > 1 else task_content
+                       else:
+                           # 没找到JSON，按普通文本处理
+                           Log.info("未找到JSON格式，按普通文本处理")
+                           parts = task_content.split('\n\n', 1)
+                           basic_task = parts[0].strip()
+                           detail_task = parts[1].strip() if len(parts) > 1 else task_content
+                   else:
+                       # 普通文本格式处理
+                       Log.info("使用普通文本处理方式")
+                       # 查找第一个空行分隔
+                       empty_line_pos = task_content.find('\n\n')
+                       if empty_line_pos != -1:
+                           basic_task = task_content[:empty_line_pos].strip()
+                           detail_task = task_content[empty_line_pos:].strip()
+                       else:
+                           # 没有空行，尝试使用第一行作为概要
+                           lines = task_content.split('\n')
+                           basic_task = lines[0].strip()
+                           detail_task = task_content
+               else:
+                   # 未知类型
+                   Log.error(f"LLM返回了未知类型的数据: {type(task_content)}")
+                   basic_task = "今日任务计划"
+                   detail_task = str(task_content)
+                   
+               Log.info(f"解析后的任务概要: {basic_task[:100]}...")
+               Log.info(f"解析后的详细任务长度: {len(detail_task)} 字符")
+                   
            except Exception as e:
                Log.error(f"Error parsing GPT response: {str(e)}")
-               basic_task = "今日任务"
-               detail_task = task_content
+               basic_task = "今日任务计划"
+               detail_task = str(task_content)
                
            is_continued = False
            

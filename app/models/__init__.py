@@ -66,7 +66,7 @@ def dev_init(app: Flask) -> None:
             with CRUD(Member, id="2020400065") as w:
                 if not w.query_key():
                     w.add(name="王璐", major="empty", role=D.leader, learning="None")
-                    w.instance.set_password("13713819950abc!")
+                    w.instance.set_password("123456")
                 else:
                     w.update(
                         name="王璐",

@@ -19,6 +19,7 @@ from app.utils.utils import Timer
 from app.utils.constant import DataStructure as D
 from app.models.department import Department
 import logging
+from app.models.task_progress import TaskProgress
 
 @Log.track_execution(when_error=Response(Response.r.ERR_INTERNAL))
 def calculate_task_progress(period_task_id: str) -> Response:
@@ -509,17 +510,18 @@ def get_period_tasks(member_id: str, task_id: str = None):
                 progress_data = 0
             elif task.start_time <= now and task.end_time >= now:
                 status = "进行中"  # 进行中
-                # try:
-                #     # 尝试获取GPT分析的进度
-                #     progress_response = calculate_task_progress(task.task_id)
-                #     progress_data = progress_response.data
-                # except Exception as e:
-                    # 如果GPT调用失败，提供一个基于时间的预估进度
-                total_duration = (task.end_time - task.start_time).total_seconds()
-                elapsed_duration = (now - task.start_time).total_seconds()
-                estimated_progress = min(int((elapsed_duration / total_duration) * 100), 99)
                 
-                progress_data = estimated_progress,
+                # 获取最新的进度值
+                latest_progress = TaskProgress.query.filter(
+                    TaskProgress.task_id == task.task_id,
+                    TaskProgress.user_id == member_id
+                ).order_by(TaskProgress.progress_date.desc()).first()
+                
+                if latest_progress:
+                    progress_data = latest_progress.progress_value
+                else:
+                    # 如果没有进度记录，则返回0
+                    progress_data = 0
             else:
                 status = "已结束"  # 已结束
                 progress_data = 100
